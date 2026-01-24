@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -393,6 +393,9 @@ async def set_agent_model(
 ) -> dict[str, str]:
     """Set the model for a specific agent type.
 
+    Each agent gets its own independent model config record.
+    This allows the same model to be used by multiple agents.
+
     Args:
         agent_type: 'outline', 'content', or 'image'
         model_id: The model ID to assign (or 'default' to clear assignment)
@@ -402,52 +405,39 @@ async def set_agent_model(
 
     model_type = "image" if agent_type == "image" else "llm"
 
-    # Clear any existing assignment for this agent
+    # Delete any existing assignment for this specific agent
+    # (each agent has its own independent record)
     await db.execute(
-        update(ModelConfig)
-        .where(
+        delete(ModelConfig).where(
             ModelConfig.model_type == model_type,
             ModelConfig.agent_type == agent_type,
         )
-        .values(agent_type="default")
     )
 
     if model_id != "default":
-        # Find the model and set its agent_type
-        result = await db.execute(
-            select(ModelConfig).where(
-                ModelConfig.model_type == model_type,
-                ModelConfig.model_id == model_id,
-            )
+        # Fetch model info from OpenRouter to get display name
+        available = await _fetch_openrouter_models()
+        model_list = available.get(model_type, [])
+        model_info = next(
+            (m for m in model_list if m["model_id"] == model_id), None
         )
-        config = result.scalar_one_or_none()
 
-        if config:
-            config.agent_type = agent_type
-        else:
-            # Model doesn't exist in DB - fetch from OpenRouter and auto-create
-            available = await _fetch_openrouter_models()
-            model_list = available.get(model_type, [])
-            model_info = next(
-                (m for m in model_list if m["model_id"] == model_id), None
+        if not model_info:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {model_id} not found in OpenRouter"
             )
 
-            if not model_info:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Model {model_id} not found in OpenRouter"
-                )
-
-            # Create the model config with the agent assignment
-            new_config = ModelConfig(
-                model_type=model_type,
-                agent_type=agent_type,
-                model_id=model_id,
-                display_name=model_info["display_name"],
-                is_enabled=True,
-                is_default=False,
-            )
-            db.add(new_config)
+        # Create a new config record for this agent assignment
+        new_config = ModelConfig(
+            model_type=model_type,
+            agent_type=agent_type,
+            model_id=model_id,
+            display_name=model_info["display_name"],
+            is_enabled=True,
+            is_default=False,
+        )
+        db.add(new_config)
 
     await db.commit()
     return {"message": f"Agent '{agent_type}' model updated"}
