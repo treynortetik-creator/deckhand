@@ -49,14 +49,12 @@ async def get_current_user(
     return user
 
 
-@router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(
     user_data: UserCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    """Register a new user."""
+) -> Token:
+    """Register a new user and return access token."""
     existing_user = await get_user_by_email(db, user_data.email)
     if existing_user:
         raise HTTPException(
@@ -69,7 +67,12 @@ async def register(
         password=user_data.password,
         full_name=user_data.full_name,
     )
-    return user
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=access_token_expires,
+    )
+    return Token(access_token=access_token)
 
 
 @router.post("/token", response_model=Token)
