@@ -80,6 +80,18 @@ async def api_root() -> dict[str, str]:
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
 if STATIC_DIR.exists():
-    # Mount entire static directory with html=True for SPA support
-    # html=True serves index.html for directory requests and 404s
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    # Mount assets directory for static files (JS, CSS, images)
+    ASSETS_DIR = STATIC_DIR / "assets"
+    if ASSETS_DIR.exists():
+        app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
+    # Catch-all route for SPA - serves index.html for any non-API route
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve index.html for all non-API routes (SPA support)."""
+        file_path = STATIC_DIR / full_path
+        # Serve the file if it exists (e.g., favicon.ico)
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for client-side routing
+        return FileResponse(STATIC_DIR / "index.html")
