@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Palette, FileText, Cpu, Save, Upload, RefreshCw, ExternalLink, Plus, Trash2, Check, Star } from 'lucide-react';
-import { brandApi, promptApi, modelsApi, type SystemPrompt, type ModelConfig, type AvailableModels } from '../lib/api';
+import { Settings, Palette, FileText, Cpu, Save, Upload, RefreshCw, ExternalLink, Plus, Trash2 } from 'lucide-react';
+import { brandApi, promptApi, modelsApi, type SystemPrompt, type AvailableModels } from '../lib/api';
 import { ModelCombobox } from '../components/ModelCombobox';
 
 type TabId = 'brand' | 'prompts' | 'models';
@@ -647,15 +647,11 @@ interface AgentModels {
 }
 
 function ModelConfigTab() {
-  const [models, setModels] = useState<ModelConfig[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModels | null>(null);
   const [agentModels, setAgentModels] = useState<AgentModels | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addModelType, setAddModelType] = useState<'llm' | 'image'>('llm');
-  const [selectedNewModel, setSelectedNewModel] = useState<string>('');
 
   useEffect(() => {
     loadModels();
@@ -663,12 +659,10 @@ function ModelConfigTab() {
 
   const loadModels = async () => {
     try {
-      const [modelsRes, availableRes, agentsRes] = await Promise.all([
-        modelsApi.list(),
+      const [availableRes, agentsRes] = await Promise.all([
         modelsApi.available(),
         modelsApi.getAgents(),
       ]);
-      setModels(modelsRes.data);
       setAvailableModels(availableRes.data);
       setAgentModels(agentsRes.data);
     } catch (err) {
@@ -690,43 +684,13 @@ function ModelConfigTab() {
     }
   };
 
-  const handleSetDefault = async (model: ModelConfig) => {
-    try {
-      await modelsApi.update(model.id, { is_default: true });
-      setMessage({ type: 'success', text: `Arrr! ${model.display_name} is now the default ${model.model_type} model!` });
-      loadModels();
-    } catch {
-      setMessage({ type: 'error', text: 'Blimey! Failed to set default model.' });
-    }
-  };
-
-  const handleToggleEnabled = async (model: ModelConfig) => {
-    try {
-      await modelsApi.update(model.id, { is_enabled: !model.is_enabled });
-      loadModels();
-    } catch {
-      setMessage({ type: 'error', text: 'Blimey! Failed to toggle model.' });
-    }
-  };
-
-  const handleDelete = async (model: ModelConfig) => {
-    if (!confirm(`Are ye sure ye want to delete ${model.display_name}?`)) return;
-    try {
-      await modelsApi.delete(model.id);
-      setMessage({ type: 'success', text: `${model.display_name} has walked the plank!` });
-      loadModels();
-    } catch {
-      setMessage({ type: 'error', text: 'Blimey! Failed to delete model.' });
-    }
-  };
-
   const handleRefreshCache = async () => {
     setRefreshing(true);
     try {
       const response = await modelsApi.refreshCache();
       setMessage({
         type: 'success',
-        text: `Models refreshed from OpenRouter! Found ${response.data.llm_count} LLMs and ${response.data.image_count} image models.`
+        text: `Models refreshed from OpenRouter! Found ${response.data.llm_count} LLMs.`
       });
       loadModels();
     } catch {
@@ -735,31 +699,6 @@ function ModelConfigTab() {
       setRefreshing(false);
     }
   };
-
-  const handleAddModel = async () => {
-    if (!selectedNewModel || !availableModels) return;
-    const modelInfo = availableModels[addModelType].find(m => m.model_id === selectedNewModel);
-    if (!modelInfo) return;
-
-    try {
-      await modelsApi.create({
-        model_type: addModelType,
-        model_id: modelInfo.model_id,
-        display_name: modelInfo.display_name,
-        is_default: false,
-        is_enabled: true,
-      });
-      setMessage({ type: 'success', text: `Arrr! ${modelInfo.display_name} added to yer fleet!` });
-      setShowAddModal(false);
-      setSelectedNewModel('');
-      loadModels();
-    } catch {
-      setMessage({ type: 'error', text: 'Blimey! Failed to add model.' });
-    }
-  };
-
-  const llmModels = models.filter(m => m.model_type === 'llm');
-  const imageModels = models.filter(m => m.model_type === 'image');
 
   if (loading) {
     return (
@@ -776,19 +715,13 @@ function ModelConfigTab() {
         <div>
           <h2 className="font-display text-xl font-semibold text-white">Model Configuration</h2>
           <p className="text-ocean-400 text-sm">
-            Select the AI engines powering yer vessel, ye scallywag
+            Assign AI models to each agent in the generation pipeline
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowAddModal(true)} className="btn-primary">
-            <Plus className="w-4 h-4" />
-            Add Model
-          </button>
-          <button onClick={handleRefreshCache} disabled={refreshing} className="btn-secondary">
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh from OpenRouter
-          </button>
-        </div>
+        <button onClick={handleRefreshCache} disabled={refreshing} className="btn-secondary">
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh from OpenRouter
+        </button>
       </div>
 
       {message && (
@@ -803,64 +736,11 @@ function ModelConfigTab() {
         </div>
       )}
 
-      {/* LLM Models */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Cpu className="w-5 h-5 text-ocean-300" />
-          <h3 className="font-medium text-white">LLM Models</h3>
-          <span className="text-ocean-500 text-sm">(powers content generation)</span>
-        </div>
-        {llmModels.length === 0 ? (
-          <div className="text-center py-8 bg-ocean-900/30 rounded-lg border border-ocean-800">
-            <p className="text-ocean-400">No LLM models configured. Click "Add Model" to select from OpenRouter!</p>
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            {llmModels.map((model) => (
-              <ModelRow
-                key={model.id}
-                model={model}
-                onSetDefault={() => handleSetDefault(model)}
-                onToggleEnabled={() => handleToggleEnabled(model)}
-                onDelete={() => handleDelete(model)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Image Models */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Palette className="w-5 h-5 text-wood-300" />
-          <h3 className="font-medium text-white">Image Models</h3>
-          <span className="text-ocean-500 text-sm">(creates visual treasures)</span>
-        </div>
-        {imageModels.length === 0 ? (
-          <div className="text-center py-8 bg-ocean-900/30 rounded-lg border border-ocean-800">
-            <p className="text-ocean-400">No image models configured. Click "Add Model" to select from OpenRouter!</p>
-          </div>
-        ) : (
-          <div className="grid gap-2">
-            {imageModels.map((model) => (
-              <ModelRow
-                key={model.id}
-                model={model}
-                onSetDefault={() => handleSetDefault(model)}
-                onToggleEnabled={() => handleToggleEnabled(model)}
-                onDelete={() => handleDelete(model)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* Agent Configuration */}
-      <div className="border-t border-ocean-700 pt-6">
+      <div>
         <div className="mb-4">
-          <h3 className="font-display text-lg font-semibold text-white">Agent Configuration</h3>
           <p className="text-ocean-400 text-sm">
-            Assign specific models to each agent in the generation pipeline
+            Select a model for each agent from the {availableModels?.llm?.length || 0} available OpenRouter models
           </p>
         </div>
         <div className="space-y-4">
@@ -952,134 +832,6 @@ function ModelConfigTab() {
         </div>
       </div>
 
-      {/* Add Model Modal */}
-      {showAddModal && availableModels && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-ocean-900 rounded-lg p-6 max-w-md w-full mx-4 border border-ocean-700">
-            <h3 className="font-display text-xl font-semibold text-white mb-4">Add Model</h3>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-ocean-200 mb-2">Model Type</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setAddModelType('llm'); setSelectedNewModel(''); }}
-                  className={`flex-1 py-2 px-4 rounded-lg border ${
-                    addModelType === 'llm'
-                      ? 'border-gold-500 bg-gold-500/20 text-gold-400'
-                      : 'border-ocean-700 text-ocean-400 hover:border-ocean-600'
-                  }`}
-                >
-                  LLM
-                </button>
-                <button
-                  onClick={() => { setAddModelType('image'); setSelectedNewModel(''); }}
-                  className={`flex-1 py-2 px-4 rounded-lg border ${
-                    addModelType === 'image'
-                      ? 'border-gold-500 bg-gold-500/20 text-gold-400'
-                      : 'border-ocean-700 text-ocean-400 hover:border-ocean-600'
-                  }`}
-                >
-                  Image
-                </button>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-ocean-200 mb-2">Select Model</label>
-              <ModelCombobox
-                models={availableModels[addModelType]}
-                value={selectedNewModel}
-                onChange={setSelectedNewModel}
-                placeholder={`Search ${addModelType === 'llm' ? 'LLM' : 'image'} models...`}
-              />
-            </div>
-
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => { setShowAddModal(false); setSelectedNewModel(''); }}
-                className="btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddModel}
-                disabled={!selectedNewModel}
-                className="btn-primary"
-              >
-                <Plus className="w-4 h-4" />
-                Add Model
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ModelRow({
-  model,
-  onSetDefault,
-  onToggleEnabled,
-  onDelete,
-}: {
-  model: ModelConfig;
-  onSetDefault: () => void;
-  onToggleEnabled: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div
-      className={`flex items-center justify-between p-3 rounded-lg border ${
-        model.is_enabled
-          ? 'border-ocean-700 bg-ocean-900/30'
-          : 'border-ocean-800 bg-ocean-950/50 opacity-60'
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-white">{model.display_name}</span>
-            {model.is_default && (
-              <span className="flex items-center gap-1 text-xs bg-gold-500/20 text-gold-400 px-2 py-0.5 rounded">
-                <Star className="w-3 h-3" />
-                Default
-              </span>
-            )}
-          </div>
-          <code className="text-ocean-500 text-xs font-mono">{model.model_id}</code>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {!model.is_default && model.is_enabled && (
-          <button
-            onClick={onSetDefault}
-            className="p-2 text-ocean-400 hover:text-gold-400 hover:bg-ocean-800 rounded-lg transition-colors"
-            title="Set as default"
-          >
-            <Star className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          onClick={onToggleEnabled}
-          className={`p-2 rounded-lg transition-colors ${
-            model.is_enabled
-              ? 'text-green-400 hover:bg-ocean-800'
-              : 'text-ocean-600 hover:bg-ocean-800 hover:text-ocean-400'
-          }`}
-          title={model.is_enabled ? 'Disable' : 'Enable'}
-        >
-          <Check className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onDelete}
-          className="p-2 text-ocean-400 hover:text-red-400 hover:bg-ocean-800 rounded-lg transition-colors"
-          title="Delete"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
     </div>
   );
 }
