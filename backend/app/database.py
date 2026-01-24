@@ -9,16 +9,24 @@ from app.config import get_settings
 
 settings = get_settings()
 
+# Normalize DATABASE_URL to use asyncpg driver
+# Railway may URL-encode the + as %2B, or user may provide postgresql:// without driver
+database_url = settings.database_url
+if database_url.startswith("postgresql://"):
+    database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif database_url.startswith("postgresql%2Basyncpg://"):
+    database_url = database_url.replace("postgresql%2Basyncpg://", "postgresql+asyncpg://", 1)
+
 # Configure SSL for Supabase/Railway connections
 connect_args = {}
-if "supabase" in settings.database_url or "railway" in settings.database_url:
+if "supabase" in database_url or "railway" in database_url:
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
     connect_args["ssl"] = ssl_context
 
 engine = create_async_engine(
-    settings.database_url,
+    database_url,
     echo=settings.debug,
     connect_args=connect_args,
 )
