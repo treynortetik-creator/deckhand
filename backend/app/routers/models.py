@@ -21,7 +21,7 @@ router = APIRouter(prefix="/models", tags=["models"])
 _models_cache: dict[str, Any] = {"data": None, "timestamp": 0}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
-# Known image generation model patterns
+# Known image generation model patterns (for categorization)
 IMAGE_MODEL_PATTERNS = [
     "dall-e",
     "flux",
@@ -31,22 +31,6 @@ IMAGE_MODEL_PATTERNS = [
     "imagen",
     "ideogram",
 ]
-
-# Fallback models if OpenRouter API is unavailable
-FALLBACK_MODELS: dict[str, list[dict[str, str]]] = {
-    "llm": [
-        {
-            "model_id": "anthropic/claude-3.5-sonnet",
-            "display_name": "Claude 3.5 Sonnet",
-        },
-        {"model_id": "openai/gpt-4o", "display_name": "GPT-4o"},
-        {"model_id": "google/gemini-pro-1.5", "display_name": "Gemini Pro 1.5"},
-    ],
-    "image": [
-        {"model_id": "openai/dall-e-3", "display_name": "DALL-E 3"},
-        {"model_id": "black-forest-labs/flux-1-dev", "display_name": "Flux 1 Dev"},
-    ],
-}
 
 
 class ModelConfigResponse(BaseModel):
@@ -134,8 +118,8 @@ async def _fetch_openrouter_models() -> dict[str, list[dict[str, str]]]:
         return result
 
     except Exception as e:
-        logger.warning(f"Failed to fetch models from OpenRouter, using fallback: {e}")
-        return FALLBACK_MODELS
+        logger.warning(f"Failed to fetch models from OpenRouter: {e}")
+        return {"llm": [], "image": []}
 
 
 @router.get("/available")
@@ -310,83 +294,6 @@ async def delete_model_config(
     await db.delete(model_config)
     await db.commit()
     return {"message": "Model configuration deleted"}
-
-
-@router.post("/seed")
-async def seed_default_models(
-    db: AsyncSession = Depends(get_db),
-    _: dict = Depends(get_current_user),
-) -> dict[str, str]:
-    """Seed the database with recommended model configurations.
-
-    Fetches models from OpenRouter and adds a curated selection.
-    Only adds models that don't already exist.
-    """
-    added = 0
-
-    # Recommended models to seed (subset of OpenRouter's catalog)
-    recommended = {
-        "llm": [
-            "anthropic/claude-3.5-sonnet",
-            "anthropic/claude-3-opus",
-            "anthropic/claude-3-haiku",
-            "openai/gpt-4o",
-            "openai/gpt-4o-mini",
-            "google/gemini-pro-1.5",
-            "google/gemini-flash-1.5",
-            "meta-llama/llama-3.1-70b-instruct",
-            "mistralai/mistral-large",
-            "deepseek/deepseek-chat",
-        ],
-        "image": [
-            "openai/dall-e-3",
-            "black-forest-labs/flux-1-dev",
-            "black-forest-labs/flux-schnell",
-            "black-forest-labs/flux-1.1-pro",
-        ],
-    }
-
-    # Fetch current models from OpenRouter for display names
-    available = await _fetch_openrouter_models()
-
-    for model_type, model_ids in recommended.items():
-        available_models = {m["model_id"]: m for m in available.get(model_type, [])}
-
-        for i, model_id in enumerate(model_ids):
-            # Check if model already exists in DB
-            result = await db.execute(
-                select(ModelConfig).where(ModelConfig.model_id == model_id)
-            )
-            if result.scalar_one_or_none():
-                continue
-
-            # Get display name from OpenRouter or generate one
-            if model_id in available_models:
-                display_name = available_models[model_id]["display_name"]
-            else:
-                # Generate display name from model_id
-                parts = model_id.split("/")
-                if parts:
-                    display_name = parts[-1].replace("-", " ").title()
-                else:
-                    display_name = model_id
-
-            # First model of each type is default
-            is_default = i == 0
-
-            model_config = ModelConfig(
-                model_type=model_type,
-                model_id=model_id,
-                display_name=display_name,
-                is_default=is_default,
-                is_enabled=True,
-                config={},
-            )
-            db.add(model_config)
-            added += 1
-
-    await db.commit()
-    return {"message": f"Added {added} model configurations"}
 
 
 @router.post("/refresh-cache")

@@ -490,7 +490,6 @@ function ModelConfigTab() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModels | null>(null);
   const [loading, setLoading] = useState(true);
-  const [seeding, setSeeding] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -543,19 +542,6 @@ function ModelConfigTab() {
       loadModels();
     } catch {
       setMessage({ type: 'error', text: 'Blimey! Failed to delete model.' });
-    }
-  };
-
-  const handleSeedModels = async () => {
-    setSeeding(true);
-    try {
-      await modelsApi.seed();
-      setMessage({ type: 'success', text: 'Shiver me timbers! Default models seeded!' });
-      loadModels();
-    } catch {
-      setMessage({ type: 'error', text: 'Blimey! Failed to seed models.' });
-    } finally {
-      setSeeding(false);
     }
   };
 
@@ -627,10 +613,6 @@ function ModelConfigTab() {
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh from OpenRouter
           </button>
-          <button onClick={handleSeedModels} disabled={seeding} className="btn-secondary">
-            <RefreshCw className={`w-4 h-4 ${seeding ? 'animate-spin' : ''}`} />
-            Seed Defaults
-          </button>
         </div>
       </div>
 
@@ -655,7 +637,7 @@ function ModelConfigTab() {
         </div>
         {llmModels.length === 0 ? (
           <div className="text-center py-8 bg-ocean-900/30 rounded-lg border border-ocean-800">
-            <p className="text-ocean-400">No LLM models configured. Click "Seed Defaults" to add some!</p>
+            <p className="text-ocean-400">No LLM models configured. Click "Add Model" to select from OpenRouter!</p>
           </div>
         ) : (
           <div className="grid gap-2">
@@ -681,7 +663,7 @@ function ModelConfigTab() {
         </div>
         {imageModels.length === 0 ? (
           <div className="text-center py-8 bg-ocean-900/30 rounded-lg border border-ocean-800">
-            <p className="text-ocean-400">No image models configured. Click "Seed Defaults" to add some!</p>
+            <p className="text-ocean-400">No image models configured. Click "Add Model" to select from OpenRouter!</p>
           </div>
         ) : (
           <div className="grid gap-2">

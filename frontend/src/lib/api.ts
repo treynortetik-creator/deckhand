@@ -339,7 +339,6 @@ export const modelsApi = {
   create: (data: Omit<ModelConfig, 'id'>) => api.post<ModelConfig>('/models/', data),
   update: (id: number, data: Partial<ModelConfig>) => api.patch<ModelConfig>(`/models/${id}`, data),
   delete: (id: number) => api.delete(`/models/${id}`),
-  seed: () => api.post('/models/seed'),
   refreshCache: () => api.post<RefreshCacheResponse>('/models/refresh-cache'),
 };
 
