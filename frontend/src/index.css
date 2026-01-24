@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700;800&display=swap');
+
+/* Pirate Theme Colors */
+@theme {
+  /* Ocean Blues */
+  --color-ocean-50: #e6f4f9;
+  --color-ocean-100: #cce9f3;
+  --color-ocean-200: #99d3e7;
+  --color-ocean-300: #66bddb;
+  --color-ocean-400: #33a7cf;
+  --color-ocean-500: #0091c3;
+  --color-ocean-600: #00749c;
+  --color-ocean-700: #005775;
+  --color-ocean-800: #003a4e;
+  --color-ocean-900: #001d27;
+  --color-ocean-950: #0a1628;
+
+  /* Gold Accents */
+  --color-gold-50: #fdf9e7;
+  --color-gold-100: #fbf3cf;
+  --color-gold-200: #f7e79f;
+  --color-gold-300: #f3db6f;
+  --color-gold-400: #efcf3f;
+  --color-gold-500: #d4a828;
+  --color-gold-600: #a9861f;
+  --color-gold-700: #7e6417;
+  --color-gold-800: #54430f;
+  --color-gold-900: #292108;
+
+  /* Wood Tones */
+  --color-wood-50: #f7f3ef;
+  --color-wood-100: #efe7df;
+  --color-wood-200: #dfcfbf;
+  --color-wood-300: #cfb79f;
+  --color-wood-400: #bf9f7f;
+  --color-wood-500: #8b7355;
+  --color-wood-600: #6f5c44;
+  --color-wood-700: #534533;
+  --color-wood-800: #382e22;
+  --color-wood-900: #1c1711;
+
+  /* Fonts */
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* Base Styles */
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-ocean-950);
+  color: white;
+  margin: 0;
+  min-height: 100vh;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Component Classes */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, var(--color-gold-500), var(--color-gold-600));
+  color: var(--color-ocean-950);
+  font-weight: 600;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  font-family: var(--font-body);
+  font-size: 1rem;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--color-gold-400), var(--color-gold-500));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(212, 168, 40, 0.3);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  color: var(--color-ocean-200);
+  font-weight: 500;
+  border-radius: 0.5rem;
+  border: 2px solid var(--color-ocean-600);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  font-family: var(--font-body);
+  font-size: 1rem;
+}
+
+.btn-secondary:hover {
+  background: var(--color-ocean-800);
+  border-color: var(--color-ocean-400);
+  color: white;
+}
+
+.card {
+  background: linear-gradient(180deg, var(--color-ocean-900), var(--color-ocean-950));
+  border: 1px solid var(--color-ocean-700);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  border-color: var(--color-gold-500);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--color-ocean-900);
+  border: 1px solid var(--color-ocean-700);
+  border-radius: 0.5rem;
+  color: white;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-gold-500);
+  box-shadow: 0 0 0 3px rgba(212, 168, 40, 0.2);
+}
+
+.input::placeholder {
+  color: var(--color-ocean-400);
+}
