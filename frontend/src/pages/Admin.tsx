@@ -913,10 +913,10 @@ function ModelConfigTab() {
               </div>
               <div className="w-80">
                 <ModelCombobox
-                  models={availableModels?.image || []}
+                  models={availableModels?.llm || []}
                   value={agentModels?.image?.model_id || 'default'}
                   onChange={(modelId) => handleSetAgentModel('image', modelId)}
-                  placeholder="Search image models..."
+                  placeholder="Search models..."
                   allowDefault
                   defaultLabel="Use Default Image Model"
                 />

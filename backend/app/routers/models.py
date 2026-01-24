@@ -343,8 +343,8 @@ async def get_agent_models(
     agents = {}
 
     for agent_type in ["outline", "content", "image"]:
-        # For image agent, look in image model_type
-        model_type = "image" if agent_type == "image" else "llm"
+        # All agents use LLM models from OpenRouter
+        model_type = "llm"
 
         # First try to find agent-specific assignment
         result = await db.execute(
@@ -403,7 +403,8 @@ async def set_agent_model(
     if agent_type not in ["outline", "content", "image"]:
         raise HTTPException(status_code=400, detail="Invalid agent type")
 
-    model_type = "image" if agent_type == "image" else "llm"
+    # All agents use LLM models from OpenRouter (image generation models are also LLMs)
+    model_type = "llm"
 
     # Delete any existing assignment for this specific agent
     # (each agent has its own independent record)
@@ -455,7 +456,8 @@ async def get_model_for_agent(db: AsyncSession, agent_type: str) -> str | None:
     Returns:
         Model ID string or None if no model configured
     """
-    model_type = "image" if agent_type == "image" else "llm"
+    # All agents use LLM models from OpenRouter
+    model_type = "llm"
 
     # First try agent-specific assignment
     result = await db.execute(
