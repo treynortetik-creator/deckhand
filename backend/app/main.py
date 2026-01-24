@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import asset, auth, brand, export, generate, template
+from app.routers import asset, auth, brand, export, generate, history, prompt, template
 
 settings = get_settings()
 
@@ -34,6 +34,8 @@ app.include_router(brand.router)
 app.include_router(export.router)
 app.include_router(template.router)
 app.include_router(generate.router)
+app.include_router(history.router)
+app.include_router(prompt.router)
 
 
 @app.get("/")
