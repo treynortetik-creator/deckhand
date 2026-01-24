@@ -2,7 +2,8 @@
 
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from app.config import get_settings
 from app.models.brand import Brand
 from app.models.deck import Deck, DeckVersion, GenerationHistory
 from app.models.template import Template
+from app.routers.export import store_slides
 from app.schemas.generation import (
     DeckOutline,
     GenerationProgress,
@@ -19,12 +21,10 @@ from app.schemas.generation import (
     SlideContent,
 )
 from app.services.openrouter import (
-    OpenRouterClient,
     create_deck_outline,
     generate_slides_parallel,
     get_openrouter_client,
 )
-from app.routers.export import store_slides
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

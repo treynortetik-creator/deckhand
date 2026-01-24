@@ -68,7 +68,10 @@ class DeckVersion(Base):
     template = relationship("Template", lazy="selectin")
 
     def __repr__(self) -> str:
-        return f"<DeckVersion(id={self.id}, deck_id={self.deck_id}, version={self.version_number})>"
+        return (
+            f"<DeckVersion(id={self.id}, deck_id={self.deck_id}, "
+            f"version={self.version_number})>"
+        )
 
 
 class GenerationHistory(Base):

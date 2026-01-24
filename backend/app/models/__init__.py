@@ -3,6 +3,7 @@
 from app.models.asset import Asset
 from app.models.brand import Brand
 from app.models.deck import Deck, DeckVersion, GenerationHistory
+from app.models.model_config import ModelConfig
 from app.models.prompt import Prompt, SystemPrompt
 from app.models.template import Template
 from app.models.user import User
@@ -13,6 +14,7 @@ __all__ = [
     "Deck",
     "DeckVersion",
     "GenerationHistory",
+    "ModelConfig",
     "Prompt",
     "SystemPrompt",
     "Template",

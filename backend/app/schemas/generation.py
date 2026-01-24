@@ -8,7 +8,9 @@ class SlideContent(BaseModel):
 
     slide_number: int
     slide_type: str = Field(
-        description="Type of slide: title, content, bullets, image, two-column, quote, etc."
+        description=(
+            "Type of slide: title, content, bullets, image, two-column, quote, etc."
+        )
     )
     title: str
     body: str | None = None
@@ -33,12 +35,16 @@ class DeckOutline(BaseModel):
 class GenerationRequest(BaseModel):
     """Schema for deck generation request."""
 
-    prompt: str = Field(min_length=10, description="Description of the deck to generate")
+    prompt: str = Field(
+        min_length=10, description="Description of the deck to generate"
+    )
     template_id: int | None = None
     slide_count: int = Field(default=10, ge=3, le=50)
     tone: str = Field(
         default="professional",
-        description="Tone of the presentation: professional, casual, formal, inspirational",
+        description=(
+            "Tone of the presentation: professional, casual, formal, inspirational"
+        ),
     )
     asset_ids: list[int] = Field(default_factory=list)
 
@@ -47,7 +53,10 @@ class GenerationProgress(BaseModel):
     """Schema for tracking generation progress via WebSocket or polling."""
 
     status: str = Field(
-        description="Current status: pending, generating_outline, generating_slides, generating_images, complete, error"
+        description=(
+            "Current status: pending, generating_outline, generating_slides, "
+            "generating_images, complete, error"
+        )
     )
     current_step: int
     total_steps: int

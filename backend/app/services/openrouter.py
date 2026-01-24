@@ -107,6 +107,10 @@ class OpenRouterClient:
     ) -> str | None:
         """Generate an image using OpenRouter's image generation.
 
+        Supports multiple model types:
+        - OpenAI DALL-E models use /images/generations endpoint
+        - Flux/Nana Banana models use /chat/completions endpoint
+
         Args:
             prompt: Description of the image to generate.
             model: Image model to use. Defaults to settings.default_image_model.
@@ -117,6 +121,11 @@ class OpenRouterClient:
         client = await self._get_client()
         model = model or settings.default_image_model
 
+        # Flux/Nana Banana models use chat completions with image output
+        if "flux" in model.lower() or "nana-banana" in model.lower():
+            return await self._generate_image_via_chat(client, prompt, model)
+
+        # OpenAI DALL-E and similar models use images endpoint
         payload = {
             "model": model,
             "prompt": prompt,
@@ -134,6 +143,72 @@ class OpenRouterClient:
             return None
         except httpx.HTTPStatusError as e:
             logger.warning(f"Image generation failed: {e}")
+            return None
+
+    async def _generate_image_via_chat(
+        self,
+        client: httpx.AsyncClient,
+        prompt: str,
+        model: str,
+    ) -> str | None:
+        """Generate image using chat completions for Flux/Nana Banana models.
+
+        These models accept image generation prompts through the chat interface
+        and return base64-encoded images or URLs.
+
+        Args:
+            client: HTTP client instance.
+            prompt: Image generation prompt.
+            model: Model ID (e.g., 'nana-banana/flux-1-dev').
+
+        Returns:
+            URL or base64 data of generated image, or None if failed.
+        """
+        # Map model shortcuts to full IDs
+        model_mapping = {
+            "nana-banana/flux-1-dev": "black-forest-labs/flux-1-dev",
+            "nana-banana/flux-1-schnell": "black-forest-labs/flux-schnell",
+            "flux-1-dev": "black-forest-labs/flux-1-dev",
+            "flux-1-schnell": "black-forest-labs/flux-schnell",
+        }
+        actual_model = model_mapping.get(model, model)
+
+        payload = {
+            "model": actual_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "max_tokens": 1,  # Image models don't return text
+        }
+
+        try:
+            response = await client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+            # Handle different response formats
+            if "choices" in data and data["choices"]:
+                message = data["choices"][0].get("message", {})
+                # Check for image URL in content
+                content = message.get("content", "")
+                if content.startswith("http"):
+                    return content
+                # Check for image data
+                if "image" in message:
+                    return message["image"].get("url")
+
+            # Check for images array in response
+            if "images" in data and data["images"]:
+                return data["images"][0].get("url") or data["images"][0].get("b64_json")
+
+            logger.warning(f"Unexpected image response format: {data}")
+            return None
+
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Flux image generation failed: {e}")
             return None
 
 
@@ -324,7 +399,9 @@ async def generate_slide_content(
     Returns:
         Enhanced SlideContent with richer details.
     """
-    system_prompt = """You are a presentation content expert. Enhance the given slide with more detailed, engaging content.
+    system_prompt = """\
+You are a presentation content expert. \
+Enhance the given slide with more detailed, engaging content.
 
 IMPORTANT: Respond with ONLY valid JSON matching the exact structure provided.
 
@@ -351,7 +428,8 @@ Enhance this slide:
 {slide.model_dump_json(indent=2)}"""
 
     if brand_context:
-        user_prompt += f"\n\nBrand voice/tone: {brand_context.get('guidelines_text', '')[:300]}"
+        guidelines = brand_context.get('guidelines_text', '')[:300]
+        user_prompt += f"\n\nBrand voice/tone: {guidelines}"
 
     messages = [
         {"role": "system", "content": system_prompt},

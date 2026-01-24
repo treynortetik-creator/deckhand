@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Compass, Anchor, Ship, ExternalLink, Download, Loader2 } from 'lucide-react';
-import { Layout } from '../components/Layout';
-import {
-  generateApi,
-  templateApi,
-  exportApi,
-  GenerationRequest,
-  GenerationResponse,
-  Template,
-} from '../lib/api';
+import { generateApi, templateApi, exportApi, type Template } from '../lib/api';
 
 // Pirate-themed loading messages for each generation step
 const PIRATE_LOADING_MESSAGES = [
@@ -35,7 +27,23 @@ interface FormState {
   tone: Tone;
 }
 
-export function Generate() {
+// Temporary types until API is updated
+interface GenerationRequest {
+  prompt: string;
+  template_id?: number;
+  slide_count: number;
+  tone: 'professional' | 'casual' | 'formal' | 'creative';
+}
+
+interface GenerationResponse {
+  id: number;
+  title: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  google_slides_url?: string;
+  created_at: string;
+}
+
+export default function Generate() {
   // Form state
   const [form, setForm] = useState<FormState>({
     prompt: '',
@@ -56,7 +64,7 @@ export function Generate() {
   // Fetch templates on mount
   useEffect(() => {
     templateApi.list()
-      .then(setTemplates)
+      .then((templates) => setTemplates(templates))
       .catch((err) => console.error('Failed to fetch templates:', err));
   }, []);
 
@@ -160,14 +168,23 @@ export function Generate() {
     }
   };
 
-  const handleDownloadPptx = () => {
+  const handleDownloadPptx = async () => {
     if (!result) return;
-    window.open(exportApi.downloadPptx(result.id), '_blank');
+    try {
+      const blob = await generateApi.get(String(result.id));
+      const url = URL.createObjectURL(blob.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${result.title || 'deck'}.pptx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Failed to download. The treasure chest is stuck!');
+    }
   };
 
   return (
-    <Layout>
-      <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto">
         {/* Page Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold-500/20 mb-4">
@@ -357,7 +374,6 @@ export function Generate() {
             )}
           </div>
         )}
-      </div>
-    </Layout>
+    </div>
   );
 }

@@ -105,7 +105,10 @@ async def create_pptx_export(
     if slides is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Slides for deck {deck_id} not available. Deck may need to be regenerated.",
+            detail=(
+                f"Slides for deck {deck_id} not available. "
+                "Deck may need to be regenerated."
+            ),
         )
 
     # Get brand colors
@@ -171,7 +174,10 @@ async def download_pptx(
     if deck.pptx_file_path is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"PPTX not yet created for deck {deck_id}. Call POST /export/{deck_id}/pptx first.",
+            detail=(
+                f"PPTX not yet created for deck {deck_id}. "
+                f"Call POST /export/{deck_id}/pptx first."
+            ),
         )
 
     if not os.path.exists(deck.pptx_file_path):

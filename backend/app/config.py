@@ -1,7 +1,6 @@
 """Application configuration using pydantic-settings."""
 
 from functools import lru_cache
-from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -28,13 +27,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
 
     # OpenRouter LLM
-    openrouter_api_key: Optional[str] = None
+    openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     default_llm_model: str = "anthropic/claude-3.5-sonnet"
     default_image_model: str = "openai/dall-e-3"
 
     # Google API
-    google_credentials_json: Optional[str] = None
+    google_credentials_json: str | None = None
 
     # File Upload
     upload_dir: str = "uploads"

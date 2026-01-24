@@ -294,13 +294,53 @@ export const promptApi = {
 // ============================================================================
 
 export interface ModelConfig {
-  llm_model: string;
-  image_model: string;
-  openrouter_dashboard_url: string;
+  id: number;
+  model_type: 'llm' | 'image';
+  model_id: string;
+  display_name: string;
+  is_default: boolean;
+  is_enabled: boolean;
+  config?: Record<string, unknown>;
 }
 
+export interface AvailableModel {
+  model_id: string;
+  display_name: string;
+}
+
+export interface AvailableModels {
+  llm: AvailableModel[];
+  image: AvailableModel[];
+}
+
+export interface DefaultModels {
+  llm: ModelConfig | null;
+  image: ModelConfig | null;
+}
+
+export const modelsApi = {
+  list: (modelType?: string) =>
+    api.get<ModelConfig[]>('/models/', { params: modelType ? { model_type: modelType } : undefined }),
+  available: () => api.get<AvailableModels>('/models/available'),
+  defaults: () => api.get<DefaultModels>('/models/defaults'),
+  create: (data: Omit<ModelConfig, 'id'>) => api.post<ModelConfig>('/models/', data),
+  update: (id: number, data: Partial<ModelConfig>) => api.patch<ModelConfig>(`/models/${id}`, data),
+  delete: (id: number) => api.delete(`/models/${id}`),
+  seed: () => api.post('/models/seed'),
+};
+
+// Legacy configApi for backward compatibility
 export const configApi = {
-  getModels: () => api.get<ModelConfig>('/config/models'),
+  getModels: async () => {
+    const defaults = await modelsApi.defaults();
+    return {
+      data: {
+        llm_model: defaults.data.llm?.model_id || 'anthropic/claude-3.5-sonnet',
+        image_model: defaults.data.image?.model_id || 'openai/dall-e-3',
+        openrouter_dashboard_url: 'https://openrouter.ai/activity',
+      },
+    };
+  },
 };
 
 // ============================================================================

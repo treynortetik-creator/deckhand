@@ -43,7 +43,11 @@ async def get_generation_history(
     total = total_result.scalar() or 0
 
     # Get paginated results ordered by most recent first
-    query = query.order_by(GenerationHistory.created_at.desc()).offset(skip).limit(limit)
+    query = (
+        query.order_by(GenerationHistory.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
     result = await db.execute(query)
     history_records = result.scalars().all()
 

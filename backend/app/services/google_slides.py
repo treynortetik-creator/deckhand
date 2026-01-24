@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build, Resource
+from googleapiclient.discovery import Resource, build
 
 from app.config import get_settings
 from app.schemas.generation import SlideContent
@@ -36,7 +36,8 @@ def get_slides_service() -> Resource:
     if not settings.google_credentials_json:
         raise ValueError(
             "Google credentials not configured. "
-            "Set GOOGLE_CREDENTIALS_JSON environment variable with base64-encoded service account JSON."
+            "Set GOOGLE_CREDENTIALS_JSON environment variable "
+            "with base64-encoded service account JSON."
         )
 
     try:
@@ -70,7 +71,8 @@ def get_drive_service() -> Resource:
     if not settings.google_credentials_json:
         raise ValueError(
             "Google credentials not configured. "
-            "Set GOOGLE_CREDENTIALS_JSON environment variable with base64-encoded service account JSON."
+            "Set GOOGLE_CREDENTIALS_JSON environment variable "
+            "with base64-encoded service account JSON."
         )
 
     try:
@@ -235,7 +237,9 @@ async def create_google_slides_presentation(
                     break
 
     # Create new presentation
-    presentation = slides_service.presentations().create(body={"title": title}).execute()
+    presentation = (
+        slides_service.presentations().create(body={"title": title}).execute()
+    )
     presentation_id = presentation["presentationId"]
 
     logger.info(f"Created presentation {presentation_id} with title: {title}")
@@ -248,14 +252,14 @@ async def create_google_slides_presentation(
 
     # EMU constants (English Metric Units)
     # 1 inch = 914400 EMU
-    EMU_PER_INCH = 914400
-    SLIDE_WIDTH = 10 * EMU_PER_INCH  # 10 inches
-    SLIDE_HEIGHT = 7.5 * EMU_PER_INCH  # 7.5 inches (standard 4:3)
+    emu_per_inch = 914400
+    slide_width = 10 * emu_per_inch  # 10 inches
+    slide_height = 7.5 * emu_per_inch  # 7.5 inches (standard 4:3)
 
     # Margins and spacing
-    MARGIN = 0.5 * EMU_PER_INCH
-    TITLE_HEIGHT = 0.8 * EMU_PER_INCH
-    BODY_TOP = 1.5 * EMU_PER_INCH
+    margin = 0.5 * emu_per_inch
+    title_height = 0.8 * emu_per_inch
+    body_top = 1.5 * emu_per_inch
 
     for idx, slide in enumerate(slides):
         slide_id = f"slide_{idx}"
@@ -278,10 +282,10 @@ async def create_google_slides_presentation(
                 page_id=slide_id,
                 element_id=title_id,
                 text=title_text,
-                x=MARGIN,
-                y=MARGIN,
-                width=SLIDE_WIDTH - (2 * MARGIN),
-                height=TITLE_HEIGHT,
+                x=margin,
+                y=margin,
+                width=slide_width - (2 * margin),
+                height=title_height,
                 font_size=32,
                 bold=True,
                 color=primary_color,
@@ -303,10 +307,10 @@ async def create_google_slides_presentation(
                     page_id=slide_id,
                     element_id=body_id,
                     text=body_text,
-                    x=MARGIN,
-                    y=BODY_TOP,
-                    width=SLIDE_WIDTH - (2 * MARGIN),
-                    height=SLIDE_HEIGHT - BODY_TOP - MARGIN,
+                    x=margin,
+                    y=body_top,
+                    width=slide_width - (2 * margin),
+                    height=slide_height - body_top - margin,
                     font_size=18,
                     bold=False,
                     color=secondary_color,

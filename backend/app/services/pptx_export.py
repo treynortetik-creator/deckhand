@@ -63,7 +63,9 @@ async def download_image(url: str, save_path: str) -> str | None:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
             if response.status_code != 200:
-                logger.error(f"Failed to download image: {url} (status {response.status_code})")
+                logger.error(
+                    f"Failed to download image: {url} (status {response.status_code})"
+                )
                 return None
 
             # Ensure directory exists
@@ -80,7 +82,9 @@ async def download_image(url: str, save_path: str) -> str | None:
         return None
 
 
-def _get_brand_color(brand_colors: dict[str, Any] | None, key: str, default: str) -> str:
+def _get_brand_color(
+    brand_colors: dict[str, Any] | None, key: str, default: str
+) -> str:
     """Safely get a brand color with fallback to default.
 
     Args:
@@ -134,7 +138,7 @@ def create_title_slide(
 
     # Slide dimensions
     slide_width = Inches(10)
-    slide_height = Inches(7.5)
+    _ = Inches(7.5)  # slide_height - unused but kept for documentation
 
     # Title - centered on slide
     title_left = Inches(0.5)
@@ -142,7 +146,9 @@ def create_title_slide(
     title_width = slide_width - Inches(1)
     title_height = Inches(1.5)
 
-    title_box = ppt_slide.shapes.add_textbox(title_left, title_top, title_width, title_height)
+    title_box = ppt_slide.shapes.add_textbox(
+        title_left, title_top, title_width, title_height
+    )
     title_frame = title_box.text_frame
     title_frame.word_wrap = True
 
@@ -151,7 +157,9 @@ def create_title_slide(
     title_para.alignment = 1  # PP_ALIGN.CENTER
 
     # Apply title formatting
-    title_color = _get_brand_color(brand_colors, "primary", DEFAULT_BRAND_COLORS["primary"])
+    title_color = _get_brand_color(
+        brand_colors, "primary", DEFAULT_BRAND_COLORS["primary"]
+    )
     rgb = hex_to_rgb(title_color)
     title_run = title_para.runs[0]
     title_run.font.size = Pt(44)
@@ -207,7 +215,9 @@ def create_content_slide(
     title_width = slide_width - Inches(1)
     title_height = Inches(1)
 
-    title_box = ppt_slide.shapes.add_textbox(title_left, title_top, title_width, title_height)
+    title_box = ppt_slide.shapes.add_textbox(
+        title_left, title_top, title_width, title_height
+    )
     title_frame = title_box.text_frame
     title_frame.word_wrap = True
 
@@ -215,7 +225,9 @@ def create_content_slide(
     title_para.text = slide.title
 
     # Apply title formatting
-    title_color = _get_brand_color(brand_colors, "primary", DEFAULT_BRAND_COLORS["primary"])
+    title_color = _get_brand_color(
+        brand_colors, "primary", DEFAULT_BRAND_COLORS["primary"]
+    )
     rgb = hex_to_rgb(title_color)
     title_run = title_para.runs[0]
     title_run.font.size = Pt(32)
@@ -235,7 +247,9 @@ def create_content_slide(
     content_frame.word_wrap = True
 
     # Get text color
-    text_color = _get_brand_color(brand_colors, "secondary", DEFAULT_BRAND_COLORS["secondary"])
+    text_color = _get_brand_color(
+        brand_colors, "secondary", DEFAULT_BRAND_COLORS["secondary"]
+    )
     rgb = hex_to_rgb(text_color)
 
     # Add bullets if present
