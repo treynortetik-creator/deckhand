@@ -353,6 +353,7 @@ async def create_deck_outline(
     slide_count: int = 10,
     tone: str = "professional",
     brand_context: dict[str, Any] | None = None,
+    model: str | None = None,
 ) -> DeckOutline:
     """Generate a deck outline from a user prompt.
 
@@ -363,6 +364,7 @@ async def create_deck_outline(
         slide_count: Target number of slides.
         tone: Desired presentation tone.
         brand_context: Optional brand guidelines.
+        model: Model ID to use (defaults to settings.default_llm_model).
 
     Returns:
         DeckOutline with title, slides, and summary.
@@ -379,8 +381,10 @@ async def create_deck_outline(
         {"role": "user", "content": f"Create a presentation about: {prompt}"},
     ]
 
+    logger.info(f"Creating deck outline with model: {model or 'default'}")
     response = await client.chat_completion(
         messages=messages,
+        model=model,
         temperature=0.7,
         max_tokens=8192,
     )
@@ -404,6 +408,7 @@ async def generate_slide_content(
     slide: SlideContent,
     deck_context: str,
     brand_context: dict[str, Any] | None = None,
+    model: str | None = None,
 ) -> SlideContent:
     """Enhance a single slide with more detailed content.
 
@@ -412,6 +417,7 @@ async def generate_slide_content(
         slide: The slide to enhance.
         deck_context: Overall deck title and summary for context.
         brand_context: Optional brand guidelines.
+        model: Model ID to use (defaults to settings.default_llm_model).
 
     Returns:
         Enhanced SlideContent with richer details.
@@ -456,6 +462,7 @@ Enhance this slide:
     try:
         response = await client.chat_completion(
             messages=messages,
+            model=model,
             temperature=0.6,
             max_tokens=2048,
         )
@@ -463,7 +470,7 @@ Enhance this slide:
         enhanced_data = _extract_json_from_response(response)
         return SlideContent(**enhanced_data)
     except Exception as e:
-        logger.warning(f"Failed to enhance slide {slide.slide_number}: {e}")
+        logger.error(f"Failed to enhance slide {slide.slide_number}: {e}")
         return slide
 
 
@@ -472,6 +479,7 @@ async def generate_slides_parallel(
     outline: DeckOutline,
     brand_context: dict[str, Any] | None = None,
     max_concurrent: int = 3,
+    model: str | None = None,
 ) -> list[SlideContent]:
     """Process slides in parallel batches for faster generation.
 
@@ -480,6 +488,7 @@ async def generate_slides_parallel(
         outline: The deck outline with slides to enhance.
         brand_context: Optional brand guidelines.
         max_concurrent: Maximum concurrent requests (default 3 to avoid rate limits).
+        model: Model ID to use (defaults to settings.default_llm_model).
 
     Returns:
         List of enhanced SlideContent objects.
@@ -487,20 +496,32 @@ async def generate_slides_parallel(
     deck_context = f"Title: {outline.title}\nSummary: {outline.summary}"
     enhanced_slides: list[SlideContent] = []
 
+    logger.info(f"Enhancing {len(outline.slides)} slides with model: {model or 'default'}")
+
     # Process in batches to respect rate limits
     for i in range(0, len(outline.slides), max_concurrent):
         batch = outline.slides[i : i + max_concurrent]
+        batch_num = i // max_concurrent + 1
+        total_batches = (len(outline.slides) + max_concurrent - 1) // max_concurrent
+
+        logger.info(f"Processing slide batch {batch_num}/{total_batches}")
 
         tasks = [
-            generate_slide_content(client, slide, deck_context, brand_context)
+            generate_slide_content(client, slide, deck_context, brand_context, model)
             for slide in batch
         ]
 
-        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Add timeout for the batch (60 seconds per slide in batch)
+        try:
+            async with asyncio.timeout(60 * len(batch)):
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        except TimeoutError:
+            logger.error(f"Batch {batch_num} timed out, using original slides")
+            batch_results = batch  # Use original slides on timeout
 
         for j, result in enumerate(batch_results):
             if isinstance(result, Exception):
-                logger.error(f"Slide enhancement failed: {result}")
+                logger.error(f"Slide {batch[j].slide_number} enhancement failed: {result}")
                 # Use original slide on failure
                 enhanced_slides.append(batch[j])
             else:

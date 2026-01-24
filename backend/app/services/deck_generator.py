@@ -20,6 +20,7 @@ from app.schemas.generation import (
     GenerationResult,
     SlideContent,
 )
+from app.routers.models import get_model_for_agent
 from app.services.openrouter import (
     create_deck_outline,
     generate_slides_parallel,
@@ -179,6 +180,11 @@ async def generate_deck(
 
     client = get_openrouter_client()
 
+    # Get configured models for each agent
+    outline_model = await get_model_for_agent(db, "outline")
+    content_model = await get_model_for_agent(db, "content")
+    logger.info(f"Using models - outline: {outline_model or 'default'}, content: {content_model or 'default'}")
+
     try:
         outline: DeckOutline = await create_deck_outline(
             client=client,
@@ -187,6 +193,7 @@ async def generate_deck(
             slide_count=request.slide_count,
             tone=request.tone,
             brand_context=brand_context,
+            model=outline_model,
         )
         logger.info(f"Generated outline with {len(outline.slides)} slides")
     except Exception as e:
@@ -196,7 +203,7 @@ async def generate_deck(
             prompt=request.prompt,
             template_id=request.template_id,
             assets_used=request.asset_ids,
-            model_used=settings.default_llm_model,
+            model_used=outline_model or settings.default_llm_model,
             success=False,
             error_message=str(e),
         )
@@ -220,6 +227,7 @@ async def generate_deck(
             outline=outline,
             brand_context=brand_context,
             max_concurrent=3,
+            model=content_model,
         )
         logger.info(f"Enhanced {len(enhanced_slides)} slides")
     except Exception as e:
@@ -243,7 +251,7 @@ async def generate_deck(
         title=outline.title,
         prompt_used=request.prompt,
         template_id=request.template_id,
-        model_used=settings.default_llm_model,
+        model_used=outline_model or settings.default_llm_model,
         generation_time_seconds=generation_time,
         created_by=user_id,
     )
@@ -268,7 +276,7 @@ async def generate_deck(
         prompt=request.prompt,
         template_id=request.template_id,
         assets_used=request.asset_ids,
-        model_used=settings.default_llm_model,
+        model_used=outline_model or settings.default_llm_model,
         deck_id=deck.id,
         success=True,
     )
