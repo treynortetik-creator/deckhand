@@ -76,18 +76,10 @@ async def api_root() -> dict[str, str]:
 
 
 # Serve static frontend files in production
+# Must be mounted LAST so API routes take precedence
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
 if STATIC_DIR.exists():
-    # Mount static assets (js, css, images, etc.)
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str) -> FileResponse:
-        """Serve the SPA for any non-API route."""
-        # Try to serve the exact file first
-        file_path = STATIC_DIR / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        # Fall back to index.html for SPA routing
-        return FileResponse(STATIC_DIR / "index.html")
+    # Mount entire static directory with html=True for SPA support
+    # html=True serves index.html for directory requests and 404s
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
