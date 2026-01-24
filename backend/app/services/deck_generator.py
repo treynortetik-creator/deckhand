@@ -24,6 +24,7 @@ from app.services.openrouter import (
     generate_slides_parallel,
     get_openrouter_client,
 )
+from app.routers.export import store_slides
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -248,6 +249,9 @@ async def generate_deck(
     )
     db.add(deck)
     await db.flush()  # Get the deck ID
+
+    # Store slides for export service
+    store_slides(deck.id, enhanced_slides)
 
     # Create DeckVersion record (version 1)
     version = DeckVersion(
