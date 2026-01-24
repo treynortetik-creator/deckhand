@@ -671,8 +671,10 @@ function ModelConfigTab() {
       setModels(modelsRes.data);
       setAvailableModels(availableRes.data);
       setAgentModels(agentsRes.data);
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to load model configuration' });
+    } catch (err) {
+      console.error('Failed to load model configuration:', err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setMessage({ type: 'error', text: `Failed to load model configuration: ${errorMsg}` });
     } finally {
       setLoading(false);
     }
