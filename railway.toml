@@ -1,7 +1,0 @@
-# Railway configuration for monorepo
-# Deploy backend and frontend as separate services
-
-[build]
-# This file is for reference - configure in Railway dashboard:
-# Backend service: Root Directory = "backend"
-# Frontend service: Root Directory = "frontend"
