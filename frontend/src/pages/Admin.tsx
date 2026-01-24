@@ -491,6 +491,7 @@ function ModelConfigTab() {
   const [availableModels, setAvailableModels] = useState<AvailableModels | null>(null);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModelType, setAddModelType] = useState<'llm' | 'image'>('llm');
@@ -558,6 +559,22 @@ function ModelConfigTab() {
     }
   };
 
+  const handleRefreshCache = async () => {
+    setRefreshing(true);
+    try {
+      const response = await modelsApi.refreshCache();
+      setMessage({
+        type: 'success',
+        text: `Models refreshed from OpenRouter! Found ${response.data.llm_count} LLMs and ${response.data.image_count} image models.`
+      });
+      loadModels();
+    } catch {
+      setMessage({ type: 'error', text: 'Blimey! Failed to refresh models from OpenRouter.' });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleAddModel = async () => {
     if (!selectedNewModel || !availableModels) return;
     const modelInfo = availableModels[addModelType].find(m => m.model_id === selectedNewModel);
@@ -605,6 +622,10 @@ function ModelConfigTab() {
           <button onClick={() => setShowAddModal(true)} className="btn-primary">
             <Plus className="w-4 h-4" />
             Add Model
+          </button>
+          <button onClick={handleRefreshCache} disabled={refreshing} className="btn-secondary">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh from OpenRouter
           </button>
           <button onClick={handleSeedModels} disabled={seeding} className="btn-secondary">
             <RefreshCw className={`w-4 h-4 ${seeding ? 'animate-spin' : ''}`} />

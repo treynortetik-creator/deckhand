@@ -1,5 +1,7 @@
 """Router for model configuration management."""
 
+import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,8 +12,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.model_config import ModelConfig
 from app.routers.auth import get_current_user
+from app.services.openrouter import get_openrouter_client
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/models", tags=["models"])
+
+# Cache for OpenRouter models (refreshes every 5 minutes)
+_models_cache: dict[str, Any] = {"data": None, "timestamp": 0}
+CACHE_TTL_SECONDS = 300  # 5 minutes
+
+# Known image generation model patterns
+IMAGE_MODEL_PATTERNS = [
+    "dall-e",
+    "flux",
+    "stable-diffusion",
+    "sdxl",
+    "midjourney",
+    "imagen",
+    "ideogram",
+]
+
+# Fallback models if OpenRouter API is unavailable
+FALLBACK_MODELS: dict[str, list[dict[str, str]]] = {
+    "llm": [
+        {
+            "model_id": "anthropic/claude-3.5-sonnet",
+            "display_name": "Claude 3.5 Sonnet",
+        },
+        {"model_id": "openai/gpt-4o", "display_name": "GPT-4o"},
+        {"model_id": "google/gemini-pro-1.5", "display_name": "Gemini Pro 1.5"},
+    ],
+    "image": [
+        {"model_id": "openai/dall-e-3", "display_name": "DALL-E 3"},
+        {"model_id": "black-forest-labs/flux-1-dev", "display_name": "Flux 1 Dev"},
+    ],
+}
 
 
 class ModelConfigResponse(BaseModel):
@@ -48,66 +83,71 @@ class ModelConfigCreate(BaseModel):
     config: dict[str, Any] | None = None
 
 
-# Available models on OpenRouter - curated list with proper IDs
-OPENROUTER_MODELS = {
-    "llm": [
-        {
-            "model_id": "anthropic/claude-3.5-sonnet",
-            "display_name": "Claude 3.5 Sonnet",
-        },
-        {"model_id": "anthropic/claude-3-opus", "display_name": "Claude 3 Opus"},
-        {"model_id": "anthropic/claude-3-haiku", "display_name": "Claude 3 Haiku"},
-        {"model_id": "openai/gpt-4o", "display_name": "GPT-4o"},
-        {"model_id": "openai/gpt-4o-mini", "display_name": "GPT-4o Mini"},
-        {"model_id": "openai/gpt-4-turbo", "display_name": "GPT-4 Turbo"},
-        {"model_id": "google/gemini-pro-1.5", "display_name": "Gemini Pro 1.5"},
-        {"model_id": "google/gemini-flash-1.5", "display_name": "Gemini Flash 1.5"},
-        {
-            "model_id": "meta-llama/llama-3.1-70b-instruct",
-            "display_name": "Llama 3.1 70B",
-        },
-        {
-            "model_id": "meta-llama/llama-3.1-8b-instruct",
-            "display_name": "Llama 3.1 8B",
-        },
-        {"model_id": "mistralai/mistral-large", "display_name": "Mistral Large"},
-        {"model_id": "mistralai/mixtral-8x7b-instruct", "display_name": "Mixtral 8x7B"},
-        {"model_id": "deepseek/deepseek-chat", "display_name": "DeepSeek Chat"},
-        {"model_id": "qwen/qwen-2.5-72b-instruct", "display_name": "Qwen 2.5 72B"},
-    ],
-    "image": [
-        {"model_id": "openai/dall-e-3", "display_name": "DALL-E 3"},
-        {"model_id": "openai/dall-e-2", "display_name": "DALL-E 2"},
-        {
-            "model_id": "black-forest-labs/flux-1-dev",
-            "display_name": "Flux 1 Dev (Nana Banana)",
-        },
-        {
-            "model_id": "black-forest-labs/flux-schnell",
-            "display_name": "Flux Schnell (Nana Banana)",
-        },
-        {
-            "model_id": "black-forest-labs/flux-1.1-pro",
-            "display_name": "Flux 1.1 Pro",
-        },
-        {
-            "model_id": "stability-ai/stable-diffusion-3",
-            "display_name": "Stable Diffusion 3",
-        },
-        {"model_id": "stability-ai/sdxl", "display_name": "SDXL"},
-    ],
-}
+def _is_image_model(model_id: str) -> bool:
+    """Check if a model ID is an image generation model."""
+    model_lower = model_id.lower()
+    return any(pattern in model_lower for pattern in IMAGE_MODEL_PATTERNS)
 
 
-@router.get("/available", response_model=dict[str, list[dict[str, str]]])
+async def _fetch_openrouter_models() -> dict[str, list[dict[str, str]]]:
+    """Fetch and categorize models from OpenRouter API with caching."""
+    global _models_cache
+
+    now = time.time()
+    if _models_cache["data"] and (now - _models_cache["timestamp"]) < CACHE_TTL_SECONDS:
+        return _models_cache["data"]
+
+    try:
+        client = get_openrouter_client()
+        raw_models = await client.list_models()
+
+        llm_models = []
+        image_models = []
+
+        for model in raw_models:
+            model_id = model.get("id", "")
+            name = model.get("name", model_id)
+
+            model_entry = {
+                "model_id": model_id,
+                "display_name": name,
+                "context_length": model.get("context_length"),
+                "pricing": model.get("pricing"),
+            }
+
+            if _is_image_model(model_id):
+                image_models.append(model_entry)
+            else:
+                llm_models.append(model_entry)
+
+        # Sort by name for better UX
+        llm_models.sort(key=lambda m: m["display_name"])
+        image_models.sort(key=lambda m: m["display_name"])
+
+        result = {"llm": llm_models, "image": image_models}
+        _models_cache = {"data": result, "timestamp": now}
+
+        logger.info(
+            f"Fetched {len(llm_models)} LLM and "
+            f"{len(image_models)} image models from OpenRouter"
+        )
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch models from OpenRouter, using fallback: {e}")
+        return FALLBACK_MODELS
+
+
+@router.get("/available")
 async def get_available_models(
     _: dict = Depends(get_current_user),
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Get list of available models from OpenRouter.
 
-    Returns curated list of LLM and image models.
+    Fetches models directly from OpenRouter API with caching.
+    Returns categorized LLM and image models.
     """
-    return OPENROUTER_MODELS
+    return await _fetch_openrouter_models()
 
 
 @router.get("/", response_model=list[ModelConfigResponse])
@@ -116,14 +156,14 @@ async def list_model_configs(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> list[ModelConfig]:
-    """List all model configurations.
+    """List all model configurations from database.
 
     Args:
         model_type: Filter by model type ('llm' or 'image').
         db: Database session.
 
     Returns:
-        List of model configurations.
+        List of saved model configurations.
     """
     query = select(ModelConfig)
     if model_type:
@@ -277,28 +317,67 @@ async def seed_default_models(
     db: AsyncSession = Depends(get_db),
     _: dict = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Seed the database with default model configurations.
+    """Seed the database with recommended model configurations.
 
+    Fetches models from OpenRouter and adds a curated selection.
     Only adds models that don't already exist.
     """
     added = 0
 
-    for model_type, models in OPENROUTER_MODELS.items():
-        for i, model in enumerate(models):
-            # Check if model already exists
+    # Recommended models to seed (subset of OpenRouter's catalog)
+    recommended = {
+        "llm": [
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3-opus",
+            "anthropic/claude-3-haiku",
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "google/gemini-pro-1.5",
+            "google/gemini-flash-1.5",
+            "meta-llama/llama-3.1-70b-instruct",
+            "mistralai/mistral-large",
+            "deepseek/deepseek-chat",
+        ],
+        "image": [
+            "openai/dall-e-3",
+            "black-forest-labs/flux-1-dev",
+            "black-forest-labs/flux-schnell",
+            "black-forest-labs/flux-1.1-pro",
+        ],
+    }
+
+    # Fetch current models from OpenRouter for display names
+    available = await _fetch_openrouter_models()
+
+    for model_type, model_ids in recommended.items():
+        available_models = {m["model_id"]: m for m in available.get(model_type, [])}
+
+        for i, model_id in enumerate(model_ids):
+            # Check if model already exists in DB
             result = await db.execute(
-                select(ModelConfig).where(ModelConfig.model_id == model["model_id"])
+                select(ModelConfig).where(ModelConfig.model_id == model_id)
             )
             if result.scalar_one_or_none():
                 continue
+
+            # Get display name from OpenRouter or generate one
+            if model_id in available_models:
+                display_name = available_models[model_id]["display_name"]
+            else:
+                # Generate display name from model_id
+                parts = model_id.split("/")
+                if parts:
+                    display_name = parts[-1].replace("-", " ").title()
+                else:
+                    display_name = model_id
 
             # First model of each type is default
             is_default = i == 0
 
             model_config = ModelConfig(
                 model_type=model_type,
-                model_id=model["model_id"],
-                display_name=model["display_name"],
+                model_id=model_id,
+                display_name=display_name,
                 is_default=is_default,
                 is_enabled=True,
                 config={},
@@ -308,3 +387,23 @@ async def seed_default_models(
 
     await db.commit()
     return {"message": f"Added {added} model configurations"}
+
+
+@router.post("/refresh-cache")
+async def refresh_models_cache(
+    _: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Force refresh the OpenRouter models cache.
+
+    Returns:
+        Updated model counts.
+    """
+    global _models_cache
+    _models_cache = {"data": None, "timestamp": 0}
+
+    models = await _fetch_openrouter_models()
+    return {
+        "message": "Cache refreshed",
+        "llm_count": len(models.get("llm", [])),
+        "image_count": len(models.get("image", [])),
+    }

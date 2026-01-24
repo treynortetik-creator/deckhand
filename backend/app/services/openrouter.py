@@ -145,6 +145,23 @@ class OpenRouterClient:
             logger.warning(f"Image generation failed: {e}")
             return None
 
+    async def list_models(self) -> list[dict[str, Any]]:
+        """Fetch available models from OpenRouter API.
+
+        Returns:
+            List of model dictionaries with id, name, pricing, etc.
+        """
+        client = await self._get_client()
+
+        try:
+            response = await client.get("/models")
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", [])
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Failed to fetch models from OpenRouter: {e}")
+            return []
+
     async def _generate_image_via_chat(
         self,
         client: httpx.AsyncClient,

@@ -306,6 +306,11 @@ export interface ModelConfig {
 export interface AvailableModel {
   model_id: string;
   display_name: string;
+  context_length?: number;
+  pricing?: {
+    prompt?: string;
+    completion?: string;
+  };
 }
 
 export interface AvailableModels {
@@ -318,6 +323,12 @@ export interface DefaultModels {
   image: ModelConfig | null;
 }
 
+export interface RefreshCacheResponse {
+  message: string;
+  llm_count: number;
+  image_count: number;
+}
+
 export const modelsApi = {
   list: (modelType?: string) =>
     api.get<ModelConfig[]>('/models/', { params: modelType ? { model_type: modelType } : undefined }),
@@ -327,6 +338,7 @@ export const modelsApi = {
   update: (id: number, data: Partial<ModelConfig>) => api.patch<ModelConfig>(`/models/${id}`, data),
   delete: (id: number) => api.delete(`/models/${id}`),
   seed: () => api.post('/models/seed'),
+  refreshCache: () => api.post<RefreshCacheResponse>('/models/refresh-cache'),
 };
 
 // Legacy configApi for backward compatibility
