@@ -4,6 +4,7 @@ import ssl
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
@@ -19,7 +20,9 @@ elif database_url.startswith("postgresql%2Basyncpg://"):
 
 # Configure SSL and connection args for Supabase/Railway connections
 connect_args = {}
-if "supabase" in database_url or "railway" in database_url:
+use_external_pooler = "supabase" in database_url or "railway" in database_url
+
+if use_external_pooler:
     # Create SSL context that doesn't verify certificates (needed for Supabase pooler)
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
@@ -27,11 +30,16 @@ if "supabase" in database_url or "railway" in database_url:
     connect_args["ssl"] = ssl_ctx
     # Disable prepared statement caching - required for connection poolers
     connect_args["prepared_statement_cache_size"] = 0
+    # Also disable statement cache at statement level
+    connect_args["statement_cache_size"] = 0
 
+# Use NullPool for external poolers to avoid prepared statement conflicts
+# When Supabase/Railway pooler manages connections, SQLAlchemy shouldn't also pool
 engine = create_async_engine(
     database_url,
     echo=settings.debug,
     connect_args=connect_args,
+    poolclass=NullPool if use_external_pooler else None,
 )
 
 async_session = async_sessionmaker(
