@@ -1,7 +1,12 @@
 """Deckhand API - AI-powered pitch deck generator."""
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import (
@@ -49,9 +54,18 @@ app.include_router(history.router)
 app.include_router(prompt.router)
 
 
-@app.get("/")
-async def root() -> dict[str, str]:
-    """Root endpoint with a pirate greeting."""
+@app.get("/health")
+async def health() -> dict[str, str]:
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": settings.app_name,
+    }
+
+
+@app.get("/api")
+async def api_root() -> dict[str, str]:
+    """API root endpoint with a pirate greeting."""
     return {
         "message": (
             "Ahoy, matey! Welcome aboard the Deckhand API! "
@@ -61,10 +75,19 @@ async def root() -> dict[str, str]:
     }
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": settings.app_name,
-    }
+# Serve static frontend files in production
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+if STATIC_DIR.exists():
+    # Mount static assets (js, css, images, etc.)
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str) -> FileResponse:
+        """Serve the SPA for any non-API route."""
+        # Try to serve the exact file first
+        file_path = STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Fall back to index.html for SPA routing
+        return FileResponse(STATIC_DIR / "index.html")

@@ -1,9 +1,11 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use VITE_API_URL if set, otherwise use same origin (empty string)
+// In production, frontend is served from the same server as the API
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 export const api = axios.create({
-  baseURL: API_BASE,
+  baseURL: API_BASE || undefined,
   headers: { 'Content-Type': 'application/json' },
 });
 
