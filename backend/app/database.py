@@ -15,11 +15,13 @@ if database_url.startswith("postgresql://"):
 elif database_url.startswith("postgresql%2Basyncpg://"):
     database_url = database_url.replace("postgresql%2Basyncpg://", "postgresql+asyncpg://", 1)
 
-# Configure SSL for Supabase/Railway connections
-# Use ssl="require" for asyncpg compatibility with Supabase pooler
+# Configure SSL and connection args for Supabase/Railway connections
 connect_args = {}
 if "supabase" in database_url or "railway" in database_url:
+    # SSL required for Supabase pooler
     connect_args["ssl"] = "require"
+    # Disable prepared statement caching - required for connection poolers
+    connect_args["prepared_statement_cache_size"] = 0
 
 engine = create_async_engine(
     database_url,
