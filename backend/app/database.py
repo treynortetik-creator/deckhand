@@ -1,7 +1,5 @@
 """Database configuration and session management."""
 
-import ssl
-
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,12 +16,10 @@ elif database_url.startswith("postgresql%2Basyncpg://"):
     database_url = database_url.replace("postgresql%2Basyncpg://", "postgresql+asyncpg://", 1)
 
 # Configure SSL for Supabase/Railway connections
+# Use ssl="require" for asyncpg compatibility with Supabase pooler
 connect_args = {}
 if "supabase" in database_url or "railway" in database_url:
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    connect_args["ssl"] = ssl_context
+    connect_args["ssl"] = "require"
 
 engine = create_async_engine(
     database_url,
