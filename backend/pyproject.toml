@@ -31,6 +31,9 @@ dependencies = [
     # HTTP client
     "httpx>=0.26.0",
 
+    # Async file operations
+    "aiofiles>=23.2.0",
+
     # Document processing
     "python-pptx>=0.6.23",
     "PyPDF2>=3.0.0",
@@ -42,7 +45,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2.0",
 
     # Configuration & Validation
-    "pydantic>=2.5.0",
+    "pydantic[email]>=2.5.0",
     "pydantic-settings>=2.1.0",
 ]
 
