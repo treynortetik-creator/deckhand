@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Settings, Palette, FileText, Cpu, Save, Upload, RefreshCw, ExternalLink, Plus, Trash2, Check, Star } from 'lucide-react';
 import { brandApi, promptApi, modelsApi, type SystemPrompt, type ModelConfig, type AvailableModels } from '../lib/api';
+import { ModelCombobox } from '../components/ModelCombobox';
 
 type TabId = 'brand' | 'prompts' | 'models';
 
@@ -863,67 +864,61 @@ function ModelConfigTab() {
         <div className="space-y-4">
           {/* Outline Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-shrink-0">
                 <h4 className="font-medium text-white">Outline Agent</h4>
                 <p className="text-ocean-500 text-sm">Plans deck structure and slide flow (temp 0.7)</p>
               </div>
-              <select
-                value={agentModels?.outline?.model_id || 'default'}
-                onChange={(e) => handleSetAgentModel('outline', e.target.value)}
-                className="input w-64"
-              >
-                <option value="default">Use Default LLM</option>
-                {llmModels.filter(m => m.is_enabled).map((model) => (
-                  <option key={model.id} value={model.model_id}>
-                    {model.display_name}
-                  </option>
-                ))}
-              </select>
+              <div className="w-80">
+                <ModelCombobox
+                  models={availableModels?.llm || []}
+                  value={agentModels?.outline?.model_id || 'default'}
+                  onChange={(modelId) => handleSetAgentModel('outline', modelId)}
+                  placeholder="Search LLM models..."
+                  allowDefault
+                  defaultLabel="Use Default LLM"
+                />
+              </div>
             </div>
           </div>
 
           {/* Content Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-shrink-0">
                 <h4 className="font-medium text-white">Content Agent</h4>
                 <p className="text-ocean-500 text-sm">Enhances slide content in parallel (temp 0.6)</p>
               </div>
-              <select
-                value={agentModels?.content?.model_id || 'default'}
-                onChange={(e) => handleSetAgentModel('content', e.target.value)}
-                className="input w-64"
-              >
-                <option value="default">Use Default LLM</option>
-                {llmModels.filter(m => m.is_enabled).map((model) => (
-                  <option key={model.id} value={model.model_id}>
-                    {model.display_name}
-                  </option>
-                ))}
-              </select>
+              <div className="w-80">
+                <ModelCombobox
+                  models={availableModels?.llm || []}
+                  value={agentModels?.content?.model_id || 'default'}
+                  onChange={(modelId) => handleSetAgentModel('content', modelId)}
+                  placeholder="Search LLM models..."
+                  allowDefault
+                  defaultLabel="Use Default LLM"
+                />
+              </div>
             </div>
           </div>
 
           {/* Image Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-shrink-0">
                 <h4 className="font-medium text-white">Image Agent</h4>
                 <p className="text-ocean-500 text-sm">Generates visual assets for slides</p>
               </div>
-              <select
-                value={agentModels?.image?.model_id || 'default'}
-                onChange={(e) => handleSetAgentModel('image', e.target.value)}
-                className="input w-64"
-              >
-                <option value="default">Use Default Image Model</option>
-                {imageModels.filter(m => m.is_enabled).map((model) => (
-                  <option key={model.id} value={model.model_id}>
-                    {model.display_name}
-                  </option>
-                ))}
-              </select>
+              <div className="w-80">
+                <ModelCombobox
+                  models={availableModels?.image || []}
+                  value={agentModels?.image?.model_id || 'default'}
+                  onChange={(modelId) => handleSetAgentModel('image', modelId)}
+                  placeholder="Search image models..."
+                  allowDefault
+                  defaultLabel="Use Default Image Model"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -989,18 +984,12 @@ function ModelConfigTab() {
 
             <div className="mb-6">
               <label className="block text-sm font-medium text-ocean-200 mb-2">Select Model</label>
-              <select
+              <ModelCombobox
+                models={availableModels[addModelType]}
                 value={selectedNewModel}
-                onChange={(e) => setSelectedNewModel(e.target.value)}
-                className="input"
-              >
-                <option value="">Choose a model...</option>
-                {availableModels[addModelType].map((model) => (
-                  <option key={model.model_id} value={model.model_id}>
-                    {model.display_name}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedNewModel}
+                placeholder={`Search ${addModelType === 'llm' ? 'LLM' : 'image'} models...`}
+              />
             </div>
 
             <div className="flex gap-3 justify-end">

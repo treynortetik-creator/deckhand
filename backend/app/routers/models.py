@@ -425,10 +425,29 @@ async def set_agent_model(
         if config:
             config.agent_type = agent_type
         else:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Model {model_id} not found in {model_type} configurations"
+            # Model doesn't exist in DB - fetch from OpenRouter and auto-create
+            available = await _fetch_openrouter_models()
+            model_list = available.get(model_type, [])
+            model_info = next(
+                (m for m in model_list if m["model_id"] == model_id), None
             )
+
+            if not model_info:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Model {model_id} not found in OpenRouter"
+                )
+
+            # Create the model config with the agent assignment
+            new_config = ModelConfig(
+                model_type=model_type,
+                agent_type=agent_type,
+                model_id=model_id,
+                display_name=model_info["display_name"],
+                is_enabled=True,
+                is_default=False,
+            )
+            db.add(new_config)
 
     await db.commit()
     return {"message": f"Agent '{agent_type}' model updated"}
