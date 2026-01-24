@@ -69,6 +69,11 @@ export default function Admin() {
 // Brand Settings Tab
 // ============================================================================
 
+interface ColorEntry {
+  label: string;
+  value: string;
+}
+
 function BrandSettingsTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -76,14 +81,12 @@ function BrandSettingsTab() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    primary_color: '#d4a828',
-    secondary_color: '#0091c3',
-    font_family: 'Inter',
-  });
+  // Form state with proper dict structure
+  const [name, setName] = useState('');
+  const [primaryColors, setPrimaryColors] = useState<ColorEntry[]>([{ label: 'primary', value: '#d4a828' }]);
+  const [secondaryColors, setSecondaryColors] = useState<ColorEntry[]>([{ label: 'secondary', value: '#5a7b87' }]);
+  const [fonts, setFonts] = useState({ heading: 'Inter', body: 'Inter' });
+  const [guidelinesText, setGuidelinesText] = useState<string | null>(null);
 
   useEffect(() => {
     loadBrand();
@@ -92,13 +95,33 @@ function BrandSettingsTab() {
   const loadBrand = async () => {
     try {
       const response = await brandApi.getCurrent();
-      setFormData({
-        name: response.data.name || '',
-        description: response.data.description || '',
-        primary_color: response.data.primary_color || '#d4a828',
-        secondary_color: response.data.secondary_color || '#0091c3',
-        font_family: response.data.font_family || 'Inter',
-      });
+      const data = response.data;
+
+      setName(data.name || '');
+
+      // Load primary colors from dict
+      if (data.primary_colors && Object.keys(data.primary_colors).length > 0) {
+        setPrimaryColors(
+          Object.entries(data.primary_colors).map(([label, value]) => ({ label, value }))
+        );
+      }
+
+      // Load secondary colors from dict
+      if (data.secondary_colors && Object.keys(data.secondary_colors).length > 0) {
+        setSecondaryColors(
+          Object.entries(data.secondary_colors).map(([label, value]) => ({ label, value }))
+        );
+      }
+
+      // Load fonts
+      if (data.fonts) {
+        setFonts({
+          heading: data.fonts.heading || 'Inter',
+          body: data.fonts.body || 'Inter',
+        });
+      }
+
+      setGuidelinesText(data.guidelines_text || null);
     } catch {
       // No brand configured yet - use defaults
     } finally {
@@ -110,9 +133,20 @@ function BrandSettingsTab() {
     setSaving(true);
     setMessage(null);
     try {
-      await brandApi.updateCurrent(formData);
+      // Convert arrays to dicts
+      const primaryColorsDict: Record<string, string> = {};
+      primaryColors.forEach(c => { primaryColorsDict[c.label] = c.value; });
+
+      const secondaryColorsDict: Record<string, string> = {};
+      secondaryColors.forEach(c => { secondaryColorsDict[c.label] = c.value; });
+
+      await brandApi.updateCurrent({
+        name,
+        primary_colors: primaryColorsDict,
+        secondary_colors: secondaryColorsDict,
+        fonts,
+      });
       setMessage({ type: 'success', text: 'Arrr! Brand settings saved successfully!' });
-      loadBrand();
     } catch {
       setMessage({ type: 'error', text: 'Blimey! Failed to save brand settings.' });
     } finally {
@@ -132,8 +166,20 @@ function BrandSettingsTab() {
     setUploading(true);
     setMessage(null);
     try {
-      await brandApi.uploadPdf(file);
-      setMessage({ type: 'success', text: 'Shiver me timbers! Brand PDF uploaded and processed!' });
+      const response = await brandApi.uploadPdf(file);
+      const data = response.data;
+
+      // Count extracted items for feedback
+      const primaryCount = data.primary_colors ? Object.keys(data.primary_colors).length : 0;
+      const secondaryCount = data.secondary_colors ? Object.keys(data.secondary_colors).length : 0;
+      const fontCount = data.fonts ? Object.keys(data.fonts).filter(k => data.fonts![k]).length : 0;
+
+      setMessage({
+        type: 'success',
+        text: `Shiver me timbers! Extracted ${primaryCount + secondaryCount} colors and ${fontCount} fonts from yer PDF!`
+      });
+
+      // Reload to show extracted data
       loadBrand();
     } catch {
       setMessage({ type: 'error', text: 'Blimey! Failed to upload brand PDF.' });
@@ -142,6 +188,39 @@ function BrandSettingsTab() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  // Color management functions
+  const addColor = (type: 'primary' | 'secondary') => {
+    const newLabel = type === 'primary' ? `color${primaryColors.length + 1}` : `color${secondaryColors.length + 1}`;
+    const newColor = { label: newLabel, value: '#888888' };
+    if (type === 'primary') {
+      setPrimaryColors([...primaryColors, newColor]);
+    } else {
+      setSecondaryColors([...secondaryColors, newColor]);
+    }
+  };
+
+  const removeColor = (type: 'primary' | 'secondary', index: number) => {
+    if (type === 'primary') {
+      if (primaryColors.length > 1) {
+        setPrimaryColors(primaryColors.filter((_, i) => i !== index));
+      }
+    } else {
+      setSecondaryColors(secondaryColors.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateColor = (type: 'primary' | 'secondary', index: number, field: 'label' | 'value', newValue: string) => {
+    if (type === 'primary') {
+      const updated = [...primaryColors];
+      updated[index] = { ...updated[index], [field]: newValue };
+      setPrimaryColors(updated);
+    } else {
+      const updated = [...secondaryColors];
+      updated[index] = { ...updated[index], [field]: newValue };
+      setSecondaryColors(updated);
     }
   };
 
@@ -177,80 +256,154 @@ function BrandSettingsTab() {
         </div>
       )}
 
-      {/* Brand Info */}
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-ocean-200 mb-2">Brand Name</label>
-          <input
-            type="text"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Enter yer brand name"
-            className="input"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-ocean-200 mb-2">Font Family</label>
-          <input
-            type="text"
-            value={formData.font_family}
-            onChange={(e) => setFormData({ ...formData, font_family: e.target.value })}
-            placeholder="e.g., Inter, Playfair Display"
-            className="input"
-          />
-        </div>
-      </div>
-
+      {/* Brand Name */}
       <div>
-        <label className="block text-sm font-medium text-ocean-200 mb-2">Description</label>
-        <textarea
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Tell us about yer brand, ye sea dog..."
-          rows={3}
-          className="input resize-none"
+        <label className="block text-sm font-medium text-ocean-200 mb-2">Brand Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Enter yer brand name"
+          className="input max-w-md"
         />
       </div>
 
-      {/* Color Pickers */}
+      {/* Fonts */}
       <div className="grid md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-ocean-200 mb-2">Primary Color</label>
-          <div className="flex gap-3 items-center">
-            <input
-              type="color"
-              value={formData.primary_color}
-              onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-              className="w-12 h-12 rounded-lg cursor-pointer border border-ocean-700 bg-transparent"
-            />
-            <input
-              type="text"
-              value={formData.primary_color}
-              onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-              className="input flex-1"
-              placeholder="#d4a828"
-            />
-          </div>
+          <label className="block text-sm font-medium text-ocean-200 mb-2">Heading Font</label>
+          <input
+            type="text"
+            value={fonts.heading}
+            onChange={(e) => setFonts({ ...fonts, heading: e.target.value })}
+            placeholder="e.g., Playfair Display"
+            className="input"
+          />
         </div>
         <div>
-          <label className="block text-sm font-medium text-ocean-200 mb-2">Secondary Color</label>
-          <div className="flex gap-3 items-center">
-            <input
-              type="color"
-              value={formData.secondary_color}
-              onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
-              className="w-12 h-12 rounded-lg cursor-pointer border border-ocean-700 bg-transparent"
-            />
-            <input
-              type="text"
-              value={formData.secondary_color}
-              onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
-              className="input flex-1"
-              placeholder="#0091c3"
-            />
-          </div>
+          <label className="block text-sm font-medium text-ocean-200 mb-2">Body Font</label>
+          <input
+            type="text"
+            value={fonts.body}
+            onChange={(e) => setFonts({ ...fonts, body: e.target.value })}
+            placeholder="e.g., Inter"
+            className="input"
+          />
         </div>
       </div>
+
+      {/* Primary Colors */}
+      <div className="border-t border-ocean-700 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-display text-lg font-semibold text-white">Primary Colors</h3>
+            <p className="text-ocean-400 text-sm">Main brand colors used for headings and accents</p>
+          </div>
+          <button onClick={() => addColor('primary')} className="btn-secondary text-sm py-2 px-3">
+            <Plus className="w-4 h-4" />
+            Add Color
+          </button>
+        </div>
+        <div className="space-y-3">
+          {primaryColors.map((color, index) => (
+            <div key={index} className="flex gap-3 items-center">
+              <input
+                type="color"
+                value={color.value}
+                onChange={(e) => updateColor('primary', index, 'value', e.target.value)}
+                className="w-12 h-10 rounded-lg cursor-pointer border border-ocean-700 bg-transparent"
+              />
+              <input
+                type="text"
+                value={color.value}
+                onChange={(e) => updateColor('primary', index, 'value', e.target.value)}
+                className="input w-32"
+                placeholder="#hex"
+              />
+              <input
+                type="text"
+                value={color.label}
+                onChange={(e) => updateColor('primary', index, 'label', e.target.value)}
+                className="input flex-1"
+                placeholder="Label (e.g., primary, accent)"
+              />
+              {primaryColors.length > 1 && (
+                <button
+                  onClick={() => removeColor('primary', index)}
+                  className="p-2 text-ocean-400 hover:text-red-400 hover:bg-ocean-800 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Secondary Colors */}
+      <div className="border-t border-ocean-700 pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-display text-lg font-semibold text-white">Secondary Colors</h3>
+            <p className="text-ocean-400 text-sm">Supporting colors for backgrounds and body text</p>
+          </div>
+          <button onClick={() => addColor('secondary')} className="btn-secondary text-sm py-2 px-3">
+            <Plus className="w-4 h-4" />
+            Add Color
+          </button>
+        </div>
+        <div className="space-y-3">
+          {secondaryColors.map((color, index) => (
+            <div key={index} className="flex gap-3 items-center">
+              <input
+                type="color"
+                value={color.value}
+                onChange={(e) => updateColor('secondary', index, 'value', e.target.value)}
+                className="w-12 h-10 rounded-lg cursor-pointer border border-ocean-700 bg-transparent"
+              />
+              <input
+                type="text"
+                value={color.value}
+                onChange={(e) => updateColor('secondary', index, 'value', e.target.value)}
+                className="input w-32"
+                placeholder="#hex"
+              />
+              <input
+                type="text"
+                value={color.label}
+                onChange={(e) => updateColor('secondary', index, 'label', e.target.value)}
+                className="input flex-1"
+                placeholder="Label (e.g., background, text)"
+              />
+              <button
+                onClick={() => removeColor('secondary', index)}
+                className="p-2 text-ocean-400 hover:text-red-400 hover:bg-ocean-800 rounded-lg transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          {secondaryColors.length === 0 && (
+            <p className="text-ocean-500 text-sm italic">No secondary colors. Click "Add Color" to add one.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Guidelines Text (if extracted) */}
+      {guidelinesText && (
+        <div className="border-t border-ocean-700 pt-6">
+          <details className="group">
+            <summary className="cursor-pointer flex items-center gap-2 text-ocean-200 hover:text-white">
+              <FileText className="w-4 h-4" />
+              <span className="font-medium">Extracted Guidelines Text</span>
+              <span className="text-ocean-500 text-sm ml-2">({guidelinesText.length} characters)</span>
+            </summary>
+            <div className="mt-3 p-4 bg-ocean-900/50 rounded-lg border border-ocean-800 max-h-48 overflow-y-auto">
+              <pre className="text-ocean-300 text-xs whitespace-pre-wrap font-mono">{guidelinesText}</pre>
+            </div>
+          </details>
+        </div>
+      )}
 
       {/* PDF Upload */}
       <div className="border-t border-ocean-700 pt-6">
@@ -486,9 +639,16 @@ function SystemPromptsTab() {
 // Model Configuration Tab
 // ============================================================================
 
+interface AgentModels {
+  outline: { agent_type: string; model_id: string; display_name: string } | null;
+  content: { agent_type: string; model_id: string; display_name: string } | null;
+  image: { agent_type: string; model_id: string; display_name: string } | null;
+}
+
 function ModelConfigTab() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModels | null>(null);
+  const [agentModels, setAgentModels] = useState<AgentModels | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -502,16 +662,28 @@ function ModelConfigTab() {
 
   const loadModels = async () => {
     try {
-      const [modelsRes, availableRes] = await Promise.all([
+      const [modelsRes, availableRes, agentsRes] = await Promise.all([
         modelsApi.list(),
         modelsApi.available(),
+        modelsApi.getAgents(),
       ]);
       setModels(modelsRes.data);
       setAvailableModels(availableRes.data);
+      setAgentModels(agentsRes.data);
     } catch {
       setMessage({ type: 'error', text: 'Failed to load model configuration' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSetAgentModel = async (agentType: 'outline' | 'content' | 'image', modelId: string) => {
+    try {
+      await modelsApi.setAgentModel(agentType, modelId);
+      setMessage({ type: 'success', text: `Arrr! ${agentType} agent model updated!` });
+      loadModels();
+    } catch {
+      setMessage({ type: 'error', text: 'Blimey! Failed to update agent model.' });
     }
   };
 
@@ -678,6 +850,83 @@ function ModelConfigTab() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Agent Configuration */}
+      <div className="border-t border-ocean-700 pt-6">
+        <div className="mb-4">
+          <h3 className="font-display text-lg font-semibold text-white">Agent Configuration</h3>
+          <p className="text-ocean-400 text-sm">
+            Assign specific models to each agent in the generation pipeline
+          </p>
+        </div>
+        <div className="space-y-4">
+          {/* Outline Agent */}
+          <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-white">Outline Agent</h4>
+                <p className="text-ocean-500 text-sm">Plans deck structure and slide flow (temp 0.7)</p>
+              </div>
+              <select
+                value={agentModels?.outline?.model_id || 'default'}
+                onChange={(e) => handleSetAgentModel('outline', e.target.value)}
+                className="input w-64"
+              >
+                <option value="default">Use Default LLM</option>
+                {llmModels.filter(m => m.is_enabled).map((model) => (
+                  <option key={model.id} value={model.model_id}>
+                    {model.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Content Agent */}
+          <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-white">Content Agent</h4>
+                <p className="text-ocean-500 text-sm">Enhances slide content in parallel (temp 0.6)</p>
+              </div>
+              <select
+                value={agentModels?.content?.model_id || 'default'}
+                onChange={(e) => handleSetAgentModel('content', e.target.value)}
+                className="input w-64"
+              >
+                <option value="default">Use Default LLM</option>
+                {llmModels.filter(m => m.is_enabled).map((model) => (
+                  <option key={model.id} value={model.model_id}>
+                    {model.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Image Agent */}
+          <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-white">Image Agent</h4>
+                <p className="text-ocean-500 text-sm">Generates visual assets for slides</p>
+              </div>
+              <select
+                value={agentModels?.image?.model_id || 'default'}
+                onChange={(e) => handleSetAgentModel('image', e.target.value)}
+                className="input w-64"
+              >
+                <option value="default">Use Default Image Model</option>
+                {imageModels.filter(m => m.is_enabled).map((model) => (
+                  <option key={model.id} value={model.model_id}>
+                    {model.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* OpenRouter Dashboard Link */}

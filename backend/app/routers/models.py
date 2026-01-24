@@ -38,6 +38,7 @@ class ModelConfigResponse(BaseModel):
 
     id: int
     model_type: str
+    agent_type: str = "default"  # 'default', 'outline', 'content'
     model_id: str
     display_name: str
     is_default: bool
@@ -53,6 +54,7 @@ class ModelConfigUpdate(BaseModel):
 
     is_default: bool | None = None
     is_enabled: bool | None = None
+    agent_type: str | None = None
     config: dict[str, Any] | None = None
 
 
@@ -60,11 +62,20 @@ class ModelConfigCreate(BaseModel):
     """Model configuration create schema."""
 
     model_type: str  # 'llm' or 'image'
+    agent_type: str = "default"  # 'default', 'outline', 'content'
     model_id: str
     display_name: str
     is_default: bool = False
     is_enabled: bool = True
     config: dict[str, Any] | None = None
+
+
+class AgentModelAssignment(BaseModel):
+    """Agent model assignment schema."""
+
+    agent_type: str  # 'outline', 'content', 'image'
+    model_id: str
+    display_name: str
 
 
 def _is_image_model(model_id: str) -> bool:
@@ -207,6 +218,7 @@ async def create_model_config(
 
     model_config = ModelConfig(
         model_type=config.model_type,
+        agent_type=config.agent_type,
         model_id=config.model_id,
         display_name=config.display_name,
         is_default=config.is_default,
@@ -260,6 +272,8 @@ async def update_model_config(
         model_config.is_default = updates.is_default
     if updates.is_enabled is not None:
         model_config.is_enabled = updates.is_enabled
+    if updates.agent_type is not None:
+        model_config.agent_type = updates.agent_type
     if updates.config is not None:
         model_config.config = updates.config
 
@@ -314,3 +328,147 @@ async def refresh_models_cache(
         "llm_count": len(models.get("llm", [])),
         "image_count": len(models.get("image", [])),
     }
+
+
+@router.get("/agents", response_model=dict[str, AgentModelAssignment | None])
+async def get_agent_models(
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> dict[str, AgentModelAssignment | None]:
+    """Get model assignments for each agent type.
+
+    Returns dict with keys: 'outline', 'content', 'image'
+    Each value is either the assigned model or None (use default).
+    """
+    agents = {}
+
+    for agent_type in ["outline", "content", "image"]:
+        # For image agent, look in image model_type
+        model_type = "image" if agent_type == "image" else "llm"
+
+        # First try to find agent-specific assignment
+        result = await db.execute(
+            select(ModelConfig).where(
+                ModelConfig.model_type == model_type,
+                ModelConfig.agent_type == agent_type,
+                ModelConfig.is_enabled == True,  # noqa: E712
+            )
+        )
+        config = result.scalar_one_or_none()
+
+        if config:
+            agents[agent_type] = AgentModelAssignment(
+                agent_type=agent_type,
+                model_id=config.model_id,
+                display_name=config.display_name,
+            )
+        else:
+            # Fall back to default model for that type
+            result = await db.execute(
+                select(ModelConfig).where(
+                    ModelConfig.model_type == model_type,
+                    ModelConfig.is_default == True,  # noqa: E712
+                    ModelConfig.is_enabled == True,  # noqa: E712
+                )
+            )
+            default_config = result.scalar_one_or_none()
+            if default_config:
+                agents[agent_type] = AgentModelAssignment(
+                    agent_type=agent_type,
+                    model_id=default_config.model_id,
+                    display_name=f"{default_config.display_name} (default)",
+                )
+            else:
+                agents[agent_type] = None
+
+    return agents
+
+
+@router.put("/agents/{agent_type}")
+async def set_agent_model(
+    agent_type: str,
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: dict = Depends(get_current_user),
+) -> dict[str, str]:
+    """Set the model for a specific agent type.
+
+    Args:
+        agent_type: 'outline', 'content', or 'image'
+        model_id: The model ID to assign (or 'default' to clear assignment)
+    """
+    if agent_type not in ["outline", "content", "image"]:
+        raise HTTPException(status_code=400, detail="Invalid agent type")
+
+    model_type = "image" if agent_type == "image" else "llm"
+
+    # Clear any existing assignment for this agent
+    await db.execute(
+        update(ModelConfig)
+        .where(
+            ModelConfig.model_type == model_type,
+            ModelConfig.agent_type == agent_type,
+        )
+        .values(agent_type="default")
+    )
+
+    if model_id != "default":
+        # Find the model and set its agent_type
+        result = await db.execute(
+            select(ModelConfig).where(
+                ModelConfig.model_type == model_type,
+                ModelConfig.model_id == model_id,
+            )
+        )
+        config = result.scalar_one_or_none()
+
+        if config:
+            config.agent_type = agent_type
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {model_id} not found in {model_type} configurations"
+            )
+
+    await db.commit()
+    return {"message": f"Agent '{agent_type}' model updated"}
+
+
+async def get_model_for_agent(db: AsyncSession, agent_type: str) -> str | None:
+    """Helper function to get the model ID for a specific agent.
+
+    Used by deck_generator to get the correct model for each agent.
+
+    Args:
+        db: Database session
+        agent_type: 'outline', 'content', or 'image'
+
+    Returns:
+        Model ID string or None if no model configured
+    """
+    model_type = "image" if agent_type == "image" else "llm"
+
+    # First try agent-specific assignment
+    result = await db.execute(
+        select(ModelConfig).where(
+            ModelConfig.model_type == model_type,
+            ModelConfig.agent_type == agent_type,
+            ModelConfig.is_enabled == True,  # noqa: E712
+        )
+    )
+    config = result.scalar_one_or_none()
+
+    if config:
+        return config.model_id
+
+    # Fall back to default
+    result = await db.execute(
+        select(ModelConfig).where(
+            ModelConfig.model_type == model_type,
+            ModelConfig.is_default == True,  # noqa: E712
+            ModelConfig.is_enabled == True,  # noqa: E712
+        )
+    )
+    default_config = result.scalar_one_or_none()
+
+    return default_config.model_id if default_config else None

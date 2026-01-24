@@ -43,14 +43,13 @@ export interface User {
 }
 
 export interface Brand {
-  id: string;
+  id: number;
   name: string;
-  description?: string;
-  primary_color?: string;
-  secondary_color?: string;
-  font_family?: string;
-  logo_asset_id?: string;
-  user_id: string;
+  primary_colors?: Record<string, string>;
+  secondary_colors?: Record<string, string>;
+  fonts?: Record<string, string>;
+  logo_urls?: Record<string, string>;
+  guidelines_text?: string;
   created_at: string;
   updated_at: string;
 }
@@ -155,10 +154,11 @@ export const authApi = {
 
 export interface BrandUpdate {
   name?: string;
-  description?: string;
-  primary_color?: string;
-  secondary_color?: string;
-  font_family?: string;
+  primary_colors?: Record<string, string>;
+  secondary_colors?: Record<string, string>;
+  fonts?: Record<string, string>;
+  logo_urls?: Record<string, string>;
+  guidelines_text?: string;
 }
 
 export const brandApi = {
@@ -298,11 +298,24 @@ export const promptApi = {
 export interface ModelConfig {
   id: number;
   model_type: 'llm' | 'image';
+  agent_type?: 'default' | 'outline' | 'content' | 'image';
   model_id: string;
   display_name: string;
   is_default: boolean;
   is_enabled: boolean;
   config?: Record<string, unknown>;
+}
+
+export interface AgentModelAssignment {
+  agent_type: 'outline' | 'content' | 'image';
+  model_id: string;
+  display_name: string;
+}
+
+export interface AgentModels {
+  outline: AgentModelAssignment | null;
+  content: AgentModelAssignment | null;
+  image: AgentModelAssignment | null;
 }
 
 export interface AvailableModel {
@@ -340,6 +353,10 @@ export const modelsApi = {
   update: (id: number, data: Partial<ModelConfig>) => api.patch<ModelConfig>(`/models/${id}`, data),
   delete: (id: number) => api.delete(`/models/${id}`),
   refreshCache: () => api.post<RefreshCacheResponse>('/models/refresh-cache'),
+  // Agent model assignments
+  getAgents: () => api.get<AgentModels>('/models/agents'),
+  setAgentModel: (agentType: string, modelId: string) =>
+    api.put(`/models/agents/${agentType}`, null, { params: { model_id: modelId } }),
 };
 
 // Legacy configApi for backward compatibility

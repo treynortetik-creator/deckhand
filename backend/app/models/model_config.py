@@ -18,6 +18,9 @@ class ModelConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     # model_type: 'llm' or 'image'
     model_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # agent_type: 'default', 'outline', 'content' (for LLM models)
+    # Allows per-agent model selection. 'default' is used as fallback.
+    agent_type: Mapped[str] = mapped_column(String(50), default="default", nullable=False)
     model_id: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
