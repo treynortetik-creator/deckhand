@@ -303,4 +303,51 @@ export const configApi = {
   getModels: () => api.get<ModelConfig>('/config/models'),
 };
 
+// ============================================================================
+// History API
+// ============================================================================
+
+export interface DeckHistoryItem {
+  id: number;
+  title: string;
+  prompt_used: string | null;
+  template_id: number | null;
+  google_slides_url: string | null;
+  pptx_file_path: string | null;
+  model_used: string | null;
+  generation_time_seconds: number | null;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface DeckListResponse {
+  decks: DeckHistoryItem[];
+  total: number;
+}
+
+export interface GenerationHistoryItem {
+  id: number;
+  prompt: string | null;
+  template_id: number | null;
+  assets_used: unknown[] | null;
+  model_used: string | null;
+  deck_id: number | null;
+  success: boolean;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface GenerationListResponse {
+  history: GenerationHistoryItem[];
+  total: number;
+}
+
+export const historyApi = {
+  decks: (params?: { skip?: number; limit?: number }) =>
+    api.get<DeckListResponse>('/history/decks', { params }),
+  deck: (id: number) => api.get<DeckHistoryItem>(`/history/decks/${id}`),
+  generations: (params?: { skip?: number; limit?: number; success_only?: boolean }) =>
+    api.get<GenerationListResponse>('/history/generations', { params }),
+};
+
 export { API_BASE };
