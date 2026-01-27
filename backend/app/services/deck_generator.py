@@ -1,5 +1,6 @@
 """Deck generator service orchestrating AI-powered deck creation."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -25,6 +26,7 @@ from app.services.openrouter import (
     create_deck_outline,
     generate_slides_parallel,
     get_openrouter_client,
+    OpenRouterClient,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,104 @@ settings = get_settings()
 
 # Type alias for progress callback
 ProgressCallback = Callable[[GenerationProgress], None]
+
+
+async def generate_images_for_slides(
+    client: OpenRouterClient,
+    slides: list[SlideContent],
+    image_model: str | None = None,
+    max_concurrent: int = 3,
+) -> list[SlideContent]:
+    """Generate images for slides that have image_prompt defined.
+
+    Args:
+        client: OpenRouter client instance.
+        slides: List of slides to process.
+        image_model: Model to use for image generation.
+        max_concurrent: Maximum concurrent image generation requests.
+
+    Returns:
+        List of slides with image_url populated where applicable.
+    """
+    # Find slides that need images
+    slides_needing_images = [
+        (i, slide) for i, slide in enumerate(slides)
+        if slide.image_prompt and not slide.image_url
+    ]
+
+    if not slides_needing_images:
+        logger.info("No slides require image generation")
+        return slides
+
+    logger.info(
+        f"Generating images for {len(slides_needing_images)} slides "
+        f"with model: {image_model or 'default'}"
+    )
+
+    # Create a mutable copy of slides
+    result_slides = list(slides)
+
+    # Process in batches to respect rate limits
+    for batch_start in range(0, len(slides_needing_images), max_concurrent):
+        batch = slides_needing_images[batch_start:batch_start + max_concurrent]
+
+        async def generate_single_image(
+            idx: int, slide: SlideContent
+        ) -> tuple[int, str | None]:
+            """Generate image for a single slide."""
+            try:
+                image_url = await client.generate_image(
+                    prompt=slide.image_prompt,
+                    model=image_model,
+                )
+                if image_url:
+                    logger.info(f"Generated image for slide {slide.slide_number}")
+                else:
+                    logger.warning(
+                        f"No image returned for slide {slide.slide_number}"
+                    )
+                return idx, image_url
+            except Exception as e:
+                logger.error(
+                    f"Image generation failed for slide {slide.slide_number}: {e}"
+                )
+                return idx, None
+
+        # Run batch concurrently
+        tasks = [generate_single_image(idx, slide) for idx, slide in batch]
+        try:
+            async with asyncio.timeout(120):  # 2 minute timeout per batch
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        except TimeoutError:
+            logger.error("Image generation batch timed out")
+            batch_results = [(idx, None) for idx, _ in batch]
+
+        # Update slides with generated image URLs
+        for result in batch_results:
+            if isinstance(result, Exception):
+                logger.error(f"Image generation task failed: {result}")
+                continue
+            idx, image_url = result
+            if image_url:
+                # Create new SlideContent with image_url
+                original_slide = result_slides[idx]
+                result_slides[idx] = SlideContent(
+                    slide_number=original_slide.slide_number,
+                    slide_type=original_slide.slide_type,
+                    title=original_slide.title,
+                    body=original_slide.body,
+                    bullets=original_slide.bullets,
+                    image_prompt=original_slide.image_prompt,
+                    image_url=image_url,
+                    speaker_notes=original_slide.speaker_notes,
+                )
+
+    images_generated = sum(
+        1 for slide in result_slides if slide.image_url
+    )
+    logger.info(f"Successfully generated {images_generated} images")
+
+    return result_slides
 
 
 async def get_brand_context(db: AsyncSession) -> dict[str, Any] | None:
@@ -140,7 +240,7 @@ async def generate_deck(
         ValueError: If generation fails.
     """
     start_time = time.time()
-    total_steps = 5  # Template, brand, outline, slides, save
+    total_steps = 6  # Template, brand, outline, slides, images, save
 
     # Step 1: Get template structure if specified
     _update_progress(
@@ -183,7 +283,11 @@ async def generate_deck(
     # Get configured models for each agent
     outline_model = await get_model_for_agent(db, "outline")
     content_model = await get_model_for_agent(db, "content")
-    logger.info(f"Using models - outline: {outline_model or 'default'}, content: {content_model or 'default'}")
+    image_model = await get_model_for_agent(db, "image")
+    logger.info(
+        f"Using models - outline: {outline_model or 'default'}, "
+        f"content: {content_model or 'default'}, image: {image_model or 'default'}"
+    )
 
     try:
         outline: DeckOutline = await create_deck_outline(
@@ -235,11 +339,40 @@ async def generate_deck(
         # Continue with original slides on failure
         enhanced_slides = outline.slides
 
-    # Step 5: Save to database
+    # Step 5: Generate images for slides
+    slides_with_prompts = sum(1 for s in enhanced_slides if s.image_prompt)
+    if slides_with_prompts > 0 and image_model:
+        _update_progress(
+            progress_callback,
+            status="generating_images",
+            current_step=5,
+            total_steps=total_steps,
+            message=f"Generating images for {slides_with_prompts} slides...",
+        )
+
+        try:
+            enhanced_slides = await generate_images_for_slides(
+                client=client,
+                slides=enhanced_slides,
+                image_model=image_model,
+                max_concurrent=2,  # Be conservative with image generation
+            )
+            images_generated = sum(1 for s in enhanced_slides if s.image_url)
+            logger.info(f"Generated {images_generated} images for slides")
+        except Exception as e:
+            logger.error(f"Image generation failed: {e}")
+            # Continue without images - slides are still valid
+    else:
+        if slides_with_prompts > 0:
+            logger.info("Skipping image generation - no image model configured")
+        else:
+            logger.info("No slides have image prompts - skipping image generation")
+
+    # Step 6: Save to database
     _update_progress(
         progress_callback,
         status="complete",
-        current_step=5,
+        current_step=6,
         total_steps=total_steps,
         message="Saving deck to database...",
     )
