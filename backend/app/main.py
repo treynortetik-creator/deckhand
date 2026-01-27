@@ -1,6 +1,8 @@
 """Deckhand API - AI-powered pitch deck generator."""
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import traceback
 from datetime import datetime, timezone
@@ -73,6 +75,7 @@ app.include_router(prompt.router)
 async def send_webhook_notification(error_data: dict[str, Any]) -> None:
     """Send error notification to Clawdbot webhook (fire-and-forget)."""
     webhook_url = settings.clawdbot_webhook_url
+    webhook_secret = settings.clawdbot_webhook_secret
     if not webhook_url:
         return
 
@@ -84,8 +87,21 @@ async def send_webhook_notification(error_data: dict[str, Any]) -> None:
     }
 
     try:
+        import json
+        body = json.dumps(payload)
+        headers = {"Content-Type": "application/json"}
+        
+        # Add HMAC signature if secret is configured
+        if webhook_secret:
+            signature = hmac.new(
+                webhook_secret.encode(),
+                body.encode(),
+                hashlib.sha256
+            ).hexdigest()
+            headers["X-Webhook-Signature"] = signature
+        
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(webhook_url, json=payload)
+            await client.post(webhook_url, content=body, headers=headers)
     except Exception as e:
         logger.warning(f"Failed to send webhook notification: {e}")
 

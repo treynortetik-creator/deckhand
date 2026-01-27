@@ -41,6 +41,7 @@ class Settings(BaseSettings):
 
     # Error Tracking
     clawdbot_webhook_url: str | None = None
+    clawdbot_webhook_secret: str | None = None
 
 
 @lru_cache
