@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_upload_size_mb: int = 50
 
+    # Error Tracking
+    clawdbot_webhook_url: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

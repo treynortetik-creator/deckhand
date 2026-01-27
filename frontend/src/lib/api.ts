@@ -420,4 +420,49 @@ export const historyApi = {
     api.get<GenerationListResponse>('/history/generations', { params }),
 };
 
+// ============================================================================
+// Error Tracking API
+// ============================================================================
+
+export interface ErrorItem {
+  id: number;
+  timestamp: string;
+  endpoint: string;
+  method: string;
+  status_code: number;
+  error_type: string;
+  error_message: string;
+  traceback: string | null;
+  user_id: number | null;
+  request_body: Record<string, unknown> | null;
+  resolved: boolean;
+  resolved_at: string | null;
+  notes: string | null;
+}
+
+export interface ErrorListResponse {
+  errors: ErrorItem[];
+  total: number;
+}
+
+export interface ErrorUpdate {
+  resolved?: boolean;
+  notes?: string;
+}
+
+export const errorApi = {
+  list: (params?: {
+    skip?: number;
+    limit?: number;
+    resolved?: boolean;
+    start_date?: string;
+    end_date?: string;
+    error_type?: string;
+  }) => api.get<ErrorListResponse>('/errors', { params }),
+  get: (id: number) => api.get<ErrorItem>(`/errors/${id}`),
+  update: (id: number, data: ErrorUpdate) => api.patch<ErrorItem>(`/errors/${id}`, data),
+  delete: (id: number) => api.delete(`/errors/${id}`),
+  clearResolved: () => api.post<{ deleted_count: number }>('/errors/clear-resolved'),
+};
+
 export { API_BASE };

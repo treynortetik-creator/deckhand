@@ -19,6 +19,7 @@ from app.models import (  # noqa: F401
     Brand,
     Deck,
     DeckVersion,
+    Error,
     GenerationHistory,
     Prompt,
     SystemPrompt,

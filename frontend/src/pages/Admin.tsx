@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Settings, Palette, FileText, Cpu, Save, Upload, RefreshCw, ExternalLink, Plus, Trash2 } from 'lucide-react';
-import { brandApi, promptApi, modelsApi, type SystemPrompt, type AvailableModels } from '../lib/api';
+import { Settings, Palette, FileText, Cpu, Save, Upload, RefreshCw, ExternalLink, Plus, Trash2, AlertTriangle, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { brandApi, promptApi, modelsApi, errorApi, type SystemPrompt, type AvailableModels, type ErrorItem } from '../lib/api';
 import { ModelCombobox } from '../components/ModelCombobox';
 
-type TabId = 'brand' | 'prompts' | 'models';
+type TabId = 'brand' | 'prompts' | 'models' | 'errors';
 
 interface TabConfig {
   id: TabId;
@@ -16,6 +16,7 @@ const tabs: TabConfig[] = [
   { id: 'brand', label: 'Brand Settings', icon: Palette, description: "Yer ship's colors and identity" },
   { id: 'prompts', label: 'System Prompts', icon: FileText, description: "The crew's orders and instructions" },
   { id: 'models', label: 'Model Configuration', icon: Cpu, description: 'The engines powering yer vessel' },
+  { id: 'errors', label: 'Error Log', icon: AlertTriangle, description: 'Track and manage errors' },
 ];
 
 export default function Admin() {
@@ -61,6 +62,7 @@ export default function Admin() {
         {activeTab === 'brand' && <BrandSettingsTab />}
         {activeTab === 'prompts' && <SystemPromptsTab />}
         {activeTab === 'models' && <ModelConfigTab />}
+        {activeTab === 'errors' && <ErrorLogTab />}
       </div>
     </div>
   );
@@ -832,6 +834,397 @@ function ModelConfigTab() {
         </div>
       </div>
 
+    </div>
+  );
+}
+
+// ============================================================================
+// Error Log Tab
+// ============================================================================
+
+function ErrorLogTab() {
+  const [errors, setErrors] = useState<ErrorItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [showResolved, setShowResolved] = useState<boolean | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingNotes, setEditingNotes] = useState<number | null>(null);
+  const [notesText, setNotesText] = useState('');
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const PAGE_SIZE = 15;
+
+  useEffect(() => {
+    loadErrors();
+  }, [page, showResolved]);
+
+  const loadErrors = async () => {
+    setLoading(true);
+    try {
+      const response = await errorApi.list({
+        skip: page * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        resolved: showResolved ?? undefined,
+      });
+      setErrors(response.data.errors);
+      setTotal(response.data.total);
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to load errors' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkResolved = async (errorId: number, resolved: boolean) => {
+    try {
+      await errorApi.update(errorId, { resolved });
+      setMessage({ type: 'success', text: resolved ? 'Error marked as resolved' : 'Error marked as unresolved' });
+      loadErrors();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to update error' });
+    }
+  };
+
+  const handleSaveNotes = async (errorId: number) => {
+    try {
+      await errorApi.update(errorId, { notes: notesText });
+      setMessage({ type: 'success', text: 'Notes saved' });
+      setEditingNotes(null);
+      loadErrors();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to save notes' });
+    }
+  };
+
+  const handleDelete = async (errorId: number) => {
+    if (!confirm('Are ye sure ye want to delete this error log?')) return;
+    try {
+      await errorApi.delete(errorId);
+      setMessage({ type: 'success', text: 'Error deleted' });
+      loadErrors();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to delete error' });
+    }
+  };
+
+  const handleClearResolved = async () => {
+    if (!confirm('This will permanently delete ALL resolved errors. Are ye sure, matey?')) return;
+    setClearing(true);
+    try {
+      const response = await errorApi.clearResolved();
+      setMessage({ type: 'success', text: `Cleared ${response.data.deleted_count} resolved errors` });
+      loadErrors();
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to clear resolved errors' });
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const toggleExpand = (errorId: number) => {
+    if (expandedId === errorId) {
+      setExpandedId(null);
+    } else {
+      setExpandedId(errorId);
+      const error = errors.find(e => e.id === errorId);
+      setNotesText(error?.notes || '');
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString();
+  };
+
+  const truncateMessage = (message: string, maxLength = 80) => {
+    return message.length > maxLength ? message.substring(0, maxLength) + '...' : message;
+  };
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  if (loading && errors.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <RefreshCw className="w-8 h-8 text-ocean-400 animate-spin mx-auto mb-4" />
+        <p className="text-ocean-400">Loading error log...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-xl font-semibold text-white">Error Log</h2>
+          <p className="text-ocean-400 text-sm">
+            Track and manage application errors ({total} total)
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleClearResolved}
+            disabled={clearing}
+            className="btn-secondary text-red-400 hover:text-red-300"
+          >
+            {clearing ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Clearing...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4" />
+                Clear Resolved
+              </>
+            )}
+          </button>
+          <button onClick={loadErrors} className="btn-secondary">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {message && (
+        <div
+          className={`p-4 rounded-lg ${
+            message.type === 'success'
+              ? 'bg-green-500/20 border border-green-500/50 text-green-300'
+              : 'bg-red-500/20 border border-red-500/50 text-red-300'
+          }`}
+        >
+          {message.text}
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setShowResolved(null); setPage(0); }}
+          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            showResolved === null
+              ? 'bg-gold-500/20 text-gold-500 border border-gold-500/50'
+              : 'text-ocean-300 hover:text-white hover:bg-ocean-800/50'
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => { setShowResolved(false); setPage(0); }}
+          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            showResolved === false
+              ? 'bg-red-500/20 text-red-400 border border-red-500/50'
+              : 'text-ocean-300 hover:text-white hover:bg-ocean-800/50'
+          }`}
+        >
+          Unresolved
+        </button>
+        <button
+          onClick={() => { setShowResolved(true); setPage(0); }}
+          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            showResolved === true
+              ? 'bg-green-500/20 text-green-400 border border-green-500/50'
+              : 'text-ocean-300 hover:text-white hover:bg-ocean-800/50'
+          }`}
+        >
+          Resolved
+        </button>
+      </div>
+
+      {/* Error List */}
+      {errors.length === 0 ? (
+        <div className="text-center py-12 bg-ocean-900/50 rounded-lg border border-ocean-800">
+          <AlertTriangle className="w-12 h-12 text-ocean-600 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-white mb-2">No Errors Found</h3>
+          <p className="text-ocean-400">
+            {showResolved === false
+              ? 'No unresolved errors. Smooth sailing!'
+              : showResolved === true
+              ? 'No resolved errors in the log.'
+              : 'The error log be empty. Smooth sailing ahead!'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {errors.map((error) => (
+            <div
+              key={error.id}
+              className={`border rounded-lg overflow-hidden transition-all ${
+                error.resolved
+                  ? 'border-ocean-800 bg-ocean-900/30'
+                  : 'border-red-900/50 bg-red-950/20'
+              }`}
+            >
+              {/* Error Row */}
+              <div
+                onClick={() => toggleExpand(error.id)}
+                className="flex items-center gap-4 p-4 cursor-pointer hover:bg-ocean-800/30"
+              >
+                <div className="flex-shrink-0">
+                  {expandedId === error.id ? (
+                    <ChevronDown className="w-4 h-4 text-ocean-400" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-ocean-400" />
+                  )}
+                </div>
+                <div className="flex-shrink-0 w-40 text-ocean-400 text-sm">
+                  {formatTimestamp(error.timestamp)}
+                </div>
+                <div className="flex-shrink-0 w-24">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    error.method === 'GET' ? 'bg-blue-500/20 text-blue-400' :
+                    error.method === 'POST' ? 'bg-green-500/20 text-green-400' :
+                    error.method === 'DELETE' ? 'bg-red-500/20 text-red-400' :
+                    'bg-yellow-500/20 text-yellow-400'
+                  }`}>
+                    {error.method}
+                  </span>
+                </div>
+                <div className="flex-shrink-0 w-48 text-ocean-300 text-sm font-mono truncate">
+                  {error.endpoint}
+                </div>
+                <div className="flex-shrink-0 w-32 text-ocean-300 text-sm truncate">
+                  {error.error_type}
+                </div>
+                <div className="flex-1 text-ocean-400 text-sm truncate">
+                  {truncateMessage(error.error_message)}
+                </div>
+                <div className="flex-shrink-0">
+                  {error.resolved ? (
+                    <span className="flex items-center gap-1 text-green-400 text-xs">
+                      <Check className="w-3 h-3" />
+                      Resolved
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-red-400 text-xs">
+                      <AlertTriangle className="w-3 h-3" />
+                      Open
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Expanded Details */}
+              {expandedId === error.id && (
+                <div className="border-t border-ocean-800 p-4 bg-ocean-900/50 space-y-4">
+                  {/* Full Error Message */}
+                  <div>
+                    <h4 className="text-sm font-medium text-ocean-200 mb-2">Error Message</h4>
+                    <p className="text-ocean-300 text-sm bg-ocean-950/50 p-3 rounded-lg">
+                      {error.error_message}
+                    </p>
+                  </div>
+
+                  {/* Traceback */}
+                  {error.traceback && (
+                    <div>
+                      <h4 className="text-sm font-medium text-ocean-200 mb-2">Traceback</h4>
+                      <pre className="text-ocean-400 text-xs bg-ocean-950/50 p-3 rounded-lg overflow-x-auto max-h-64 overflow-y-auto font-mono">
+                        {error.traceback}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Request Body */}
+                  {error.request_body && (
+                    <div>
+                      <h4 className="text-sm font-medium text-ocean-200 mb-2">Request Body</h4>
+                      <pre className="text-ocean-400 text-xs bg-ocean-950/50 p-3 rounded-lg overflow-x-auto max-h-32 overflow-y-auto font-mono">
+                        {JSON.stringify(error.request_body, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  <div>
+                    <h4 className="text-sm font-medium text-ocean-200 mb-2">Notes</h4>
+                    {editingNotes === error.id ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={notesText}
+                          onChange={(e) => setNotesText(e.target.value)}
+                          className="input resize-y text-sm"
+                          rows={3}
+                          placeholder="Add notes about this error..."
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSaveNotes(error.id)}
+                            className="btn-primary text-sm py-1.5 px-3"
+                          >
+                            <Save className="w-3 h-3" />
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingNotes(null)}
+                            className="btn-secondary text-sm py-1.5 px-3"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => { setEditingNotes(error.id); setNotesText(error.notes || ''); }}
+                        className="text-ocean-400 text-sm bg-ocean-950/50 p-3 rounded-lg cursor-pointer hover:bg-ocean-950/70 min-h-[60px]"
+                      >
+                        {error.notes || <span className="text-ocean-600 italic">Click to add notes...</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-2 border-t border-ocean-800">
+                    <button
+                      onClick={() => handleMarkResolved(error.id, !error.resolved)}
+                      className={`text-sm py-1.5 px-3 rounded-lg flex items-center gap-1.5 ${
+                        error.resolved
+                          ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                          : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                      }`}
+                    >
+                      <Check className="w-3 h-3" />
+                      {error.resolved ? 'Mark Unresolved' : 'Mark Resolved'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(error.id)}
+                      className="text-sm py-1.5 px-3 rounded-lg flex items-center gap-1.5 bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-4 border-t border-ocean-700">
+          <p className="text-ocean-400 text-sm">
+            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(Math.max(0, page - 1))}
+              disabled={page === 0}
+              className="btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+              disabled={page >= totalPages - 1}
+              className="btn-secondary text-sm py-1.5 px-3 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
