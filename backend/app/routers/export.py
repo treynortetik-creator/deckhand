@@ -15,6 +15,7 @@ from app.models.deck import Deck
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.schemas.generation import SlideContent
+from app.services.google_slides import create_google_slides_presentation
 from app.services.pptx_export import create_pptx
 
 logger = logging.getLogger(__name__)
@@ -194,3 +195,84 @@ async def download_pptx(
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
+
+
+@router.post("/{deck_id}/google-slides", status_code=status.HTTP_201_CREATED)
+async def create_google_slides_export(
+    deck_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Export a deck to Google Slides.
+
+    Creates a new Google Slides presentation from the deck's slides and
+    updates the deck record with the Google Slides URL.
+
+    Args:
+        deck_id: ID of the deck to export.
+        db: Database session.
+        current_user: Authenticated user.
+
+    Returns:
+        Dict with the Google Slides URL.
+
+    Raises:
+        HTTPException: If deck not found, slides not available, or export fails.
+    """
+    # Get deck from database
+    result = await db.execute(select(Deck).where(Deck.id == deck_id))
+    deck = result.scalar_one_or_none()
+
+    if deck is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Deck {deck_id} not found",
+        )
+
+    # Get slides from memory storage
+    slides = get_slides(deck_id)
+
+    if slides is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Slides for deck {deck_id} not available. "
+                "Deck may need to be regenerated."
+            ),
+        )
+
+    # Get brand colors
+    brand_colors = await _get_brand_colors(db)
+
+    # Create Google Slides presentation
+    try:
+        google_slides_url = await create_google_slides_presentation(
+            slides=slides,
+            title=deck.title,
+            brand_colors=brand_colors,
+        )
+    except ValueError as e:
+        # Credentials not configured
+        logger.error(f"Google credentials error for deck {deck_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Failed to create Google Slides for deck {deck_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create Google Slides presentation: {e}",
+        )
+
+    # Update deck with Google Slides URL
+    deck.google_slides_url = google_slides_url
+    await db.commit()
+    await db.refresh(deck)
+
+    logger.info(f"Created Google Slides for deck {deck_id}: {google_slides_url}")
+
+    return {
+        "deck_id": deck_id,
+        "url": google_slides_url,
+    }
