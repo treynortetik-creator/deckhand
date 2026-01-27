@@ -3,6 +3,8 @@
 import logging
 import os
 import re
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -190,17 +192,19 @@ def create_title_slide(
         subtitle_run.font.color.rgb = RGBColor(rgb[0], rgb[1], rgb[2])
 
 
-def create_content_slide(
+async def create_content_slide(
     prs: Presentation,
     slide: SlideContent,
     brand_colors: dict[str, Any] | None,
+    temp_dir: str | None = None,
 ) -> None:
-    """Create a content slide with title and body/bullets.
+    """Create a content slide with title, body/bullets, and optional image.
 
     Args:
         prs: PowerPoint presentation object.
-        slide: Slide content with title, body, and/or bullets.
+        slide: Slide content with title, body, bullets, and/or image_url.
         brand_colors: Brand color configuration.
+        temp_dir: Temporary directory for downloading images.
     """
     # Use blank layout (index 6)
     slide_layout = prs.slide_layouts[6]
@@ -208,6 +212,34 @@ def create_content_slide(
 
     # Slide dimensions
     slide_width = Inches(10)
+
+    # Check if we have an image to embed
+    image_path = None
+    has_image = False
+    if slide.image_url and temp_dir:
+        # Generate unique filename for the image
+        image_filename = f"slide_{slide.slide_number}_{uuid.uuid4().hex[:8]}.png"
+        image_save_path = os.path.join(temp_dir, image_filename)
+
+        # Download the image
+        image_path = await download_image(slide.image_url, image_save_path)
+        has_image = image_path is not None
+        if not has_image:
+            logger.warning(
+                f"Failed to download image for slide {slide.slide_number}, "
+                "continuing without image"
+            )
+
+    # Adjust content width based on whether we have an image
+    # If image present: text on left (60%), image on right (40%)
+    if has_image:
+        content_width = Inches(5.5)  # Left 60% for text
+        image_left = Inches(6.2)
+        image_top = Inches(1.7)
+        image_width = Inches(3.3)
+        image_height = Inches(5.0)
+    else:
+        content_width = slide_width - Inches(1)  # Full width
 
     # Title at top
     title_left = Inches(0.5)
@@ -237,7 +269,6 @@ def create_content_slide(
     # Content area
     content_left = Inches(0.5)
     content_top = Inches(1.7)
-    content_width = slide_width - Inches(1)
     content_height = Inches(5.3)
 
     content_box = ppt_slide.shapes.add_textbox(
@@ -278,6 +309,16 @@ def create_content_slide(
             run = para.runs[0]
             run.font.size = Pt(18)
             run.font.color.rgb = RGBColor(rgb[0], rgb[1], rgb[2])
+
+    # Add image if successfully downloaded
+    if has_image and image_path:
+        try:
+            ppt_slide.shapes.add_picture(
+                image_path, image_left, image_top, image_width, image_height
+            )
+            logger.info(f"Added image to slide {slide.slide_number}")
+        except Exception as e:
+            logger.error(f"Failed to add image to slide {slide.slide_number}: {e}")
 
 
 def _sanitize_filename(title: str) -> str:
@@ -322,28 +363,30 @@ async def create_pptx(
 
     logger.info(f"Creating PPTX with {len(slides)} slides")
 
-    for slide in slides:
-        slide_type = slide.slide_type.lower()
+    # Create temp directory for downloading images
+    with tempfile.TemporaryDirectory(prefix="deckhand_pptx_") as temp_dir:
+        for slide in slides:
+            slide_type = slide.slide_type.lower()
 
-        if slide_type == "title" or slide.slide_number == 1:
-            create_title_slide(prs, slide, brand_colors)
-        else:
-            create_content_slide(prs, slide, brand_colors)
+            if slide_type == "title" or slide.slide_number == 1:
+                create_title_slide(prs, slide, brand_colors)
+            else:
+                await create_content_slide(prs, slide, brand_colors, temp_dir)
 
-    # Generate output path if not provided
-    if output_path is None:
-        # Ensure exports directory exists
-        exports_dir = Path(settings.upload_dir) / "exports"
-        exports_dir.mkdir(parents=True, exist_ok=True)
+        # Generate output path if not provided
+        if output_path is None:
+            # Ensure exports directory exists
+            exports_dir = Path(settings.upload_dir) / "exports"
+            exports_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{_sanitize_filename(title)}.pptx"
-        output_path = str(exports_dir / filename)
+            filename = f"{_sanitize_filename(title)}.pptx"
+            output_path = str(exports_dir / filename)
 
-    # Ensure parent directory exists
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Ensure parent directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Save presentation
-    prs.save(output_path)
-    logger.info(f"Saved PPTX to {output_path}")
+        # Save presentation (inside temp_dir context so images still exist)
+        prs.save(output_path)
+        logger.info(f"Saved PPTX to {output_path}")
 
     return output_path
