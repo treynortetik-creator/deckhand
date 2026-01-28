@@ -116,21 +116,27 @@ export interface GenerationRequest {
   tone: 'professional' | 'casual' | 'formal' | 'creative';
 }
 
+// Matches backend GenerationResult schema
 export interface GenerationResponse {
-  id: number;
+  deck_id: number;
   title: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  google_slides_url?: string;
-  created_at: string;
+  google_slides_url: string | null;
+  pptx_download_url: string | null;
+  generation_time_seconds: number;
+  slides_generated: number;
 }
 
-export interface ProgressResponse {
-  status: string;
-  current_step: string;
-  progress: number;
-  deck_id?: number;
-  error?: string;
+// Matches backend GenerationProgress schema
+export interface GenerationProgress {
+  status: string;  // "pending", "generating_outline", "generating_slides", "generating_images", "complete", "error"
+  current_step: number;
+  total_steps: number;
+  message: string;
+  slide_progress: Record<number, string>;
 }
+
+// Response from /generate/progress endpoint (dict of all active generations)
+export type ProgressResponse = Record<string, GenerationProgress>;
 
 // ============================================================================
 // Auth API
@@ -238,6 +244,10 @@ export const generateApi = {
   },
   progress: async (): Promise<ProgressResponse> => {
     const response = await api.get<ProgressResponse>('/generate/progress');
+    return response.data;
+  },
+  progressById: async (generationId: string): Promise<GenerationProgress | null> => {
+    const response = await api.get<GenerationProgress | null>(`/generate/progress/${generationId}`);
     return response.data;
   },
   // PDF generation endpoints

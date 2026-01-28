@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Compass, Anchor, Ship, ExternalLink, Download, Loader2 } from 'lucide-react';
-import { generateApi, templateApi, exportApi, type Template } from '../lib/api';
+import { generateApi, templateApi, exportApi, type Template, type GenerationResponse } from '../lib/api';
 
 // Pirate-themed loading messages for each generation step
 const PIRATE_LOADING_MESSAGES = [
@@ -27,20 +27,12 @@ interface FormState {
   tone: Tone;
 }
 
-// Temporary types until API is updated
+// Local type for generation request
 interface GenerationRequest {
   prompt: string;
   template_id?: number;
   slide_count: number;
   tone: 'professional' | 'casual' | 'formal' | 'creative';
-}
-
-interface GenerationResponse {
-  id: number;
-  title: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  google_slides_url?: string;
-  created_at: string;
 }
 
 export default function Generate() {
@@ -88,22 +80,22 @@ export default function Generate() {
 
     const pollProgress = async () => {
       try {
-        const progressData = await generateApi.progress();
-        setProgress(progressData.progress);
-        setCurrentStep(progressData.current_step);
+        const allProgress = await generateApi.progress();
+        // Get the first (and usually only) active generation
+        const progressEntries = Object.values(allProgress);
+        if (progressEntries.length > 0) {
+          const progressData = progressEntries[0];
+          // Calculate progress percentage from current_step / total_steps
+          const progressPercent = progressData.total_steps > 0
+            ? Math.round((progressData.current_step / progressData.total_steps) * 100)
+            : 0;
+          setProgress(progressPercent);
+          setCurrentStep(progressData.message);
 
-        if (progressData.status === 'completed' && progressData.deck_id) {
-          setIsLoading(false);
-          // Fetch final result
-          setResult({
-            id: progressData.deck_id,
-            title: 'Your New Deck',
-            status: 'completed',
-            created_at: new Date().toISOString(),
-          });
-        } else if (progressData.status === 'failed') {
-          setIsLoading(false);
-          setError(progressData.error || 'Generation failed. Try again, ye scallywag!');
+          if (progressData.status === 'error') {
+            setIsLoading(false);
+            setError(progressData.message || 'Generation failed. Try again, ye scallywag!');
+          }
         }
       } catch {
         // Progress endpoint might not be available yet, continue polling
@@ -140,13 +132,11 @@ export default function Generate() {
       }
 
       const response = await generateApi.generate(request);
-      
-      // If we get an immediate response, use it
-      if (response.status === 'completed') {
-        setIsLoading(false);
-        setResult(response);
-      }
-      // Otherwise, polling will handle the status updates
+
+      // Backend returns GenerationResult on success (synchronous generation)
+      // The response contains deck_id, title, etc.
+      setIsLoading(false);
+      setResult(response);
     } catch (err) {
       setIsLoading(false);
       setError(err instanceof Error ? err.message : 'Blimey! Something went wrong on the voyage!');
@@ -160,7 +150,7 @@ export default function Generate() {
       if (result.google_slides_url) {
         window.open(result.google_slides_url, '_blank');
       } else {
-        const response = await exportApi.googleSlides(result.id);
+        const response = await exportApi.googleSlides(result.deck_id);
         window.open(response.url, '_blank');
       }
     } catch {
@@ -171,13 +161,13 @@ export default function Generate() {
   const handleDownloadPptx = async () => {
     if (!result) return;
     try {
-      const blob = await generateApi.get(String(result.id));
-      const url = URL.createObjectURL(blob.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${result.title || 'deck'}.pptx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // Use the pptx_download_url if available, otherwise use export API
+      if (result.pptx_download_url) {
+        window.open(result.pptx_download_url, '_blank');
+      } else {
+        const exportResult = await exportApi.pptx(result.deck_id);
+        window.open(exportResult.download_url, '_blank');
+      }
     } catch {
       setError('Failed to download. The treasure chest is stuck!');
     }
