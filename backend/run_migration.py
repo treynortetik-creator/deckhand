@@ -1,12 +1,16 @@
 """Run database migration on Supabase."""
 import asyncio
+import os
 import re
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
-# Supabase pooler connection (us-east-2 region)
-# URL encode special chars: ! = %21
-DATABASE_URL = "postgresql+asyncpg://postgres.aeqnqcbrnbdfwvdfwyoc:4A.dye3%21PHJtyE.@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+# Read from environment variable - never hardcode credentials!
+# Set DATABASE_URL env var before running, e.g.:
+#   export DATABASE_URL="postgresql+asyncpg://postgres.xxx:password@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required. Set it before running migrations.")
 
 import ssl
 ssl_context = ssl.create_default_context()
