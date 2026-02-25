@@ -70,6 +70,7 @@ export default function Layout() {
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden text-ocean-400 hover:text-white"
+            aria-label="Close navigation menu"
           >
             <X className="w-6 h-6" />
           </button>
@@ -106,6 +107,7 @@ export default function Layout() {
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden text-ocean-400 hover:text-white"
+            aria-label="Open navigation menu"
           >
             <Menu className="w-6 h-6" />
           </button>
