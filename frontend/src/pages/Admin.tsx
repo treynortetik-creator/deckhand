@@ -36,7 +36,7 @@ export default function Admin() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 mb-6 border-b border-ocean-700 pb-4">
+      <div className="flex gap-2 mb-6 border-b border-ocean-700 pb-4 overflow-x-auto">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -44,7 +44,7 @@ export default function Admin() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap flex-shrink-0 ${
                 isActive
                   ? 'bg-gold-500/20 text-gold-500 border border-gold-500/50'
                   : 'text-ocean-300 hover:text-white hover:bg-ocean-800/50'
@@ -667,10 +667,8 @@ function ModelConfigTab() {
       ]);
       setAvailableModels(availableRes.data);
       setAgentModels(agentsRes.data);
-    } catch (err) {
-      console.error('Failed to load model configuration:', err);
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      setMessage({ type: 'error', text: `Failed to load model configuration: ${errorMsg}` });
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to load model configuration. Check your OpenRouter API key in settings.' });
     } finally {
       setLoading(false);
     }
@@ -748,12 +746,12 @@ function ModelConfigTab() {
         <div className="space-y-4">
           {/* Outline Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
                 <h4 className="font-medium text-white">Outline Agent</h4>
                 <p className="text-ocean-500 text-sm">Plans deck structure and slide flow (temp 0.7)</p>
               </div>
-              <div className="w-80">
+              <div className="w-full sm:w-80 flex-shrink-0">
                 <ModelCombobox
                   models={availableModels?.llm || []}
                   value={agentModels?.outline?.model_id || 'default'}
@@ -768,12 +766,12 @@ function ModelConfigTab() {
 
           {/* Content Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
                 <h4 className="font-medium text-white">Content Agent</h4>
                 <p className="text-ocean-500 text-sm">Enhances slide content in parallel (temp 0.6)</p>
               </div>
-              <div className="w-80">
+              <div className="w-full sm:w-80 flex-shrink-0">
                 <ModelCombobox
                   models={availableModels?.llm || []}
                   value={agentModels?.content?.model_id || 'default'}
@@ -788,12 +786,12 @@ function ModelConfigTab() {
 
           {/* Image Agent */}
           <div className="border border-ocean-700 rounded-lg p-4 bg-ocean-900/30">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
                 <h4 className="font-medium text-white">Image Agent</h4>
                 <p className="text-ocean-500 text-sm">Generates visual assets for slides</p>
               </div>
-              <div className="w-80">
+              <div className="w-full sm:w-80 flex-shrink-0">
                 <ModelCombobox
                   models={availableModels?.llm || []}
                   value={agentModels?.image?.model_id || 'default'}
