@@ -42,13 +42,10 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# CORS middleware for frontend development
+# CORS middleware - origins configured via CORS_ORIGINS env variable
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-    ],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -153,14 +150,23 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     user_id = getattr(request.state, "user_id", None)
 
     # Try to get request body (may not be available)
+    # Sensitive fields are redacted before storing
     request_body = None
+    _SENSITIVE_FIELDS = {"password", "secret", "token", "api_key", "access_token"}
     try:
         if request.method in ("POST", "PUT", "PATCH"):
             body = await request.body()
             if body:
                 import json
 
-                request_body = json.loads(body.decode("utf-8"))
+                raw_body = json.loads(body.decode("utf-8"))
+                if isinstance(raw_body, dict):
+                    request_body = {
+                        k: "***REDACTED***" if k.lower() in _SENSITIVE_FIELDS else v
+                        for k, v in raw_body.items()
+                    }
+                else:
+                    request_body = raw_body
     except Exception:
         pass
 

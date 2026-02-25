@@ -76,10 +76,10 @@ async def register(
         return Token(access_token=access_token)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed: {type(e).__name__}: {str(e)}",
+            detail="Registration failed due to an internal error. Please try again.",
         )
 
 
