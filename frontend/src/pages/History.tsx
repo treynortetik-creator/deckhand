@@ -97,9 +97,8 @@ export default function History() {
 
         setDecks(filteredDecks);
         setDecksTotal(response.data.total);
-      } catch (err) {
+      } catch {
         setDecksError('Failed to load deck history. The sea be rough today.');
-        console.error('Error fetching deck history:', err);
       } finally {
         setDecksLoading(false);
       }
@@ -138,9 +137,8 @@ export default function History() {
 
         setGenerations(filteredGenerations);
         setGenerationsTotal(response.data.total);
-      } catch (err) {
+      } catch {
         setGenerationsError('Failed to load generation history. Davy Jones be holding the records.');
-        console.error('Error fetching generation history:', err);
       } finally {
         setGenerationsLoading(false);
       }
