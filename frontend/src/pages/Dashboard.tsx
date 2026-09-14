@@ -1,12 +1,50 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Compass, Anchor, Image, Clock, FileText, FolderOpen, Sparkles } from 'lucide-react';
+import { Compass, Anchor, Image, Clock, FileText, FolderOpen, Sparkles, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { historyApi, templateApi, assetApi, type DeckHistoryItem } from '../lib/api';
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [recentDecks, setRecentDecks] = useState<DeckHistoryItem[]>([]);
+  const [stats, setStats] = useState({ decks: 0, templates: 0, assets: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Placeholder data for recent decks (will fetch from API later)
-  const recentDecks: { id: string; title: string; createdAt: string }[] = [];
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const [decksRes, templatesRes, assetsRes] = await Promise.allSettled([
+          historyApi.decks({ skip: 0, limit: 5 }),
+          templateApi.list(),
+          assetApi.list({ limit: 1 }),
+        ]);
+
+        if (decksRes.status === 'fulfilled') {
+          setRecentDecks(decksRes.value.data.decks);
+          setStats((prev) => ({ ...prev, decks: decksRes.value.data.total }));
+        }
+        if (templatesRes.status === 'fulfilled') {
+          setStats((prev) => ({ ...prev, templates: templatesRes.value.length }));
+        }
+        if (assetsRes.status === 'fulfilled') {
+          setStats((prev) => ({ ...prev, assets: assetsRes.value.data.total }));
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -80,18 +118,35 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {recentDecks.length > 0 ? (
+        {isLoading ? (
+          <div className="p-8 rounded-lg bg-ocean-900/30 border border-ocean-800 text-center">
+            <Loader2 className="w-8 h-8 text-gold-500 mx-auto mb-2 animate-spin" />
+            <p className="text-ocean-400">Loading recent voyages...</p>
+          </div>
+        ) : recentDecks.length > 0 ? (
           <div className="grid gap-4">
             {recentDecks.map((deck) => (
               <div
                 key={deck.id}
                 className="p-4 rounded-lg bg-ocean-900/50 border border-ocean-800 hover:border-ocean-600 transition-colors flex items-center justify-between"
               >
-                <div>
-                  <h4 className="text-white font-medium">{deck.title}</h4>
-                  <p className="text-ocean-400 text-sm">{deck.createdAt}</p>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-white font-medium truncate">{deck.title}</h4>
+                  <p className="text-ocean-400 text-sm">{formatDate(deck.created_at)}</p>
                 </div>
-                <button className="btn-secondary text-sm py-2 px-4">View</button>
+                <div className="flex gap-2 ml-4 flex-shrink-0">
+                  {deck.google_slides_url && (
+                    <a
+                      href={deck.google_slides_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-sm py-1.5 px-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Slides
+                    </a>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -113,20 +168,32 @@ export default function Dashboard() {
         <h2 className="font-display text-2xl font-semibold text-white mb-4">Ship's Log</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center p-6 rounded-lg bg-ocean-900/50 border border-ocean-800">
-            <div className="text-3xl font-bold text-gold-500">0</div>
-            <div className="text-ocean-400 text-sm">Decks Generated</div>
+            {isLoading ? (
+              <Loader2 className="w-8 h-8 text-gold-500 mx-auto animate-spin" />
+            ) : (
+              <div className="text-3xl font-bold text-gold-500">{stats.decks}</div>
+            )}
+            <div className="text-ocean-400 text-sm mt-1">Decks Generated</div>
           </div>
           <div className="text-center p-6 rounded-lg bg-ocean-900/50 border border-ocean-800">
-            <div className="text-3xl font-bold text-gold-500">0</div>
-            <div className="text-ocean-400 text-sm">Templates</div>
+            {isLoading ? (
+              <Loader2 className="w-8 h-8 text-gold-500 mx-auto animate-spin" />
+            ) : (
+              <div className="text-3xl font-bold text-gold-500">{stats.templates}</div>
+            )}
+            <div className="text-ocean-400 text-sm mt-1">Templates</div>
           </div>
           <div className="text-center p-6 rounded-lg bg-ocean-900/50 border border-ocean-800">
-            <div className="text-3xl font-bold text-gold-500">0</div>
-            <div className="text-ocean-400 text-sm">Assets</div>
+            {isLoading ? (
+              <Loader2 className="w-8 h-8 text-gold-500 mx-auto animate-spin" />
+            ) : (
+              <div className="text-3xl font-bold text-gold-500">{stats.assets}</div>
+            )}
+            <div className="text-ocean-400 text-sm mt-1">Assets</div>
           </div>
           <div className="text-center p-6 rounded-lg bg-ocean-900/50 border border-ocean-800">
             <div className="text-3xl font-bold text-ocean-300">Active</div>
-            <div className="text-ocean-400 text-sm">Crew Status</div>
+            <div className="text-ocean-400 text-sm mt-1">Crew Status</div>
           </div>
         </div>
       </div>

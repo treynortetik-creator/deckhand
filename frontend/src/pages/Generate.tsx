@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Compass, Anchor, Ship, ExternalLink, Download, Loader2 } from 'lucide-react';
+import { Compass, Anchor, Ship, ExternalLink, Download, Loader2, AlertCircle } from 'lucide-react';
 import { generateApi, templateApi, exportApi, type Template, type GenerationResponse } from '../lib/api';
 
 // Pirate-themed loading messages for each generation step
@@ -17,6 +17,8 @@ const PIRATE_LOADING_MESSAGES = [
   "Battening down the hatches...",
   "Setting course for glory...",
 ];
+
+const MAX_PROMPT_LENGTH = 2000;
 
 type Tone = 'professional' | 'casual' | 'formal' | 'creative';
 
@@ -55,9 +57,9 @@ export default function Generate() {
 
   // Fetch templates on mount
   useEffect(() => {
-    templateApi.list()
-      .then((templates) => setTemplates(templates))
-      .catch((err) => console.error('Failed to fetch templates:', err));
+    templateApi.list().then((templates) => setTemplates(templates)).catch(() => {
+      // Templates are optional - silently fail
+    });
   }, []);
 
   // Rotate loading messages during generation
@@ -81,11 +83,9 @@ export default function Generate() {
     const pollProgress = async () => {
       try {
         const allProgress = await generateApi.progress();
-        // Get the first (and usually only) active generation
         const progressEntries = Object.values(allProgress);
         if (progressEntries.length > 0) {
           const progressData = progressEntries[0];
-          // Calculate progress percentage from current_step / total_steps
           const progressPercent = progressData.total_steps > 0
             ? Math.round((progressData.current_step / progressData.total_steps) * 100)
             : 0;
@@ -109,8 +109,13 @@ export default function Generate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!form.prompt.trim()) {
+    const trimmedPrompt = form.prompt.trim();
+    if (!trimmedPrompt) {
       setError('Arrr! Ye need to describe what deck ye want, matey!');
+      return;
+    }
+    if (trimmedPrompt.length > MAX_PROMPT_LENGTH) {
+      setError(`Prompt is too long! Please keep it under ${MAX_PROMPT_LENGTH} characters.`);
       return;
     }
 
@@ -122,7 +127,7 @@ export default function Generate() {
 
     try {
       const request: GenerationRequest = {
-        prompt: form.prompt,
+        prompt: trimmedPrompt,
         slide_count: form.slideCount,
         tone: form.tone,
       };
@@ -132,14 +137,18 @@ export default function Generate() {
       }
 
       const response = await generateApi.generate(request);
-
-      // Backend returns GenerationResult on success (synchronous generation)
-      // The response contains deck_id, title, etc.
       setIsLoading(false);
       setResult(response);
-    } catch (err) {
+    } catch (err: unknown) {
       setIsLoading(false);
-      setError(err instanceof Error ? err.message : 'Blimey! Something went wrong on the voyage!');
+      // Try to extract a meaningful error message from the API response
+      const axiosErr = err as { response?: { data?: { detail?: string } }; message?: string };
+      const detail = axiosErr?.response?.data?.detail;
+      if (detail) {
+        setError(typeof detail === 'string' ? detail : 'Generation failed. Please try again.');
+      } else {
+        setError('Blimey! Something went wrong on the voyage. Please try again.');
+      }
     }
   };
 
@@ -148,10 +157,10 @@ export default function Generate() {
 
     try {
       if (result.google_slides_url) {
-        window.open(result.google_slides_url, '_blank');
+        window.open(result.google_slides_url, '_blank', 'noopener,noreferrer');
       } else {
         const response = await exportApi.googleSlides(result.deck_id);
-        window.open(response.url, '_blank');
+        window.open(response.url, '_blank', 'noopener,noreferrer');
       }
     } catch {
       setError('Failed to open Google Slides. The kraken might be blocking the way!');
@@ -161,209 +170,236 @@ export default function Generate() {
   const handleDownloadPptx = async () => {
     if (!result) return;
     try {
-      // Use the pptx_download_url if available, otherwise use export API
       if (result.pptx_download_url) {
-        window.open(result.pptx_download_url, '_blank');
+        window.open(result.pptx_download_url, '_blank', 'noopener,noreferrer');
       } else {
         const exportResult = await exportApi.pptx(result.deck_id);
-        window.open(exportResult.download_url, '_blank');
+        window.open(exportResult.download_url, '_blank', 'noopener,noreferrer');
       }
     } catch {
       setError('Failed to download. The treasure chest is stuck!');
     }
   };
 
+  const promptLength = form.prompt.length;
+  const isPromptTooLong = promptLength > MAX_PROMPT_LENGTH;
+
   return (
     <div className="max-w-3xl mx-auto">
-        {/* Page Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold-500/20 mb-4">
-            <Compass className="w-8 h-8 text-gold-500" />
-          </div>
-          <h1 className="font-display text-4xl font-bold text-white mb-3">
-            Chart Your Course
-          </h1>
-          <p className="text-ocean-300 text-lg">
-            Describe the deck ye seek, and we'll craft it for ye, captain!
-          </p>
+      {/* Page Header */}
+      <div className="text-center mb-10">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold-500/20 mb-4">
+          <Compass className="w-8 h-8 text-gold-500" />
         </div>
+        <h1 className="font-display text-4xl font-bold text-white mb-3">
+          Chart Your Course
+        </h1>
+        <p className="text-ocean-300 text-lg">
+          Describe the deck ye seek, and we'll craft it for ye, captain!
+        </p>
+      </div>
 
-        {/* Generation Form */}
-        {!isLoading && !result && (
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Prompt Textarea */}
-            <div>
-              <label htmlFor="prompt" className="block text-sm font-medium text-ocean-200 mb-2">
+      {/* Generation Form */}
+      {!isLoading && !result && (
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Prompt Textarea */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label htmlFor="prompt" className="block text-sm font-medium text-ocean-200">
                 Describe Your Deck
               </label>
-              <textarea
-                id="prompt"
-                value={form.prompt}
-                onChange={(e) => setForm({ ...form, prompt: e.target.value })}
-                className="input min-h-[150px] resize-y"
-                placeholder="Tell us what treasure ye seek... e.g., 'A sales pitch for a new pirate-themed productivity app targeting remote workers'"
+              <span className={`text-xs ${isPromptTooLong ? 'text-red-400' : 'text-ocean-500'}`}>
+                {promptLength}/{MAX_PROMPT_LENGTH}
+              </span>
+            </div>
+            <textarea
+              id="prompt"
+              value={form.prompt}
+              onChange={(e) => setForm({ ...form, prompt: e.target.value })}
+              className={`input min-h-[150px] resize-y ${isPromptTooLong ? 'border-red-500 focus:border-red-400' : ''}`}
+              placeholder="Tell us what treasure ye seek... e.g., 'A sales pitch for a new pirate-themed productivity app targeting remote workers'"
+              maxLength={MAX_PROMPT_LENGTH + 100}
+            />
+          </div>
+
+          {/* Options Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Template Selector */}
+            <div>
+              <label htmlFor="template" className="block text-sm font-medium text-ocean-200 mb-2">
+                Template (Optional)
+              </label>
+              <select
+                id="template"
+                value={form.templateId || ''}
+                onChange={(e) => setForm({ ...form, templateId: e.target.value ? Number(e.target.value) : null })}
+                className="input"
+              >
+                <option value="">No template</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Slide Count Selector */}
+            <div>
+              <label htmlFor="slideCount" className="block text-sm font-medium text-ocean-200 mb-2">
+                Slide Count
+              </label>
+              <select
+                id="slideCount"
+                value={form.slideCount}
+                onChange={(e) => setForm({ ...form, slideCount: Number(e.target.value) })}
+                className="input"
+              >
+                <option value={5}>5 slides</option>
+                <option value={10}>10 slides</option>
+                <option value={15}>15 slides</option>
+                <option value={20}>20 slides</option>
+              </select>
+            </div>
+
+            {/* Tone Selector */}
+            <div>
+              <label htmlFor="tone" className="block text-sm font-medium text-ocean-200 mb-2">
+                Tone
+              </label>
+              <select
+                id="tone"
+                value={form.tone}
+                onChange={(e) => setForm({ ...form, tone: e.target.value as Tone })}
+                className="input"
+              >
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="formal">Formal</option>
+                <option value="creative">Creative</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-200 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            className="btn-primary w-full text-lg py-4"
+            disabled={isPromptTooLong || !form.prompt.trim()}
+          >
+            <Ship className="w-5 h-5" />
+            Set Sail & Generate
+          </button>
+        </form>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="card text-center py-12">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gold-500/20 mb-6">
+            <Loader2 className="w-10 h-10 text-gold-500 animate-spin" />
+          </div>
+
+          <h2 className="font-display text-2xl font-semibold text-white mb-2">
+            {loadingMessage}
+          </h2>
+          <p className="text-ocean-400 mb-6">
+            {currentStep || 'Preparing your voyage...'}
+          </p>
+
+          {/* Progress Bar */}
+          <div className="max-w-md mx-auto">
+            <div className="h-3 bg-ocean-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-gold-600 to-gold-400 transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }}
               />
             </div>
-
-            {/* Options Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Template Selector */}
-              <div>
-                <label htmlFor="template" className="block text-sm font-medium text-ocean-200 mb-2">
-                  Template (Optional)
-                </label>
-                <select
-                  id="template"
-                  value={form.templateId || ''}
-                  onChange={(e) => setForm({ ...form, templateId: e.target.value ? Number(e.target.value) : null })}
-                  className="input"
-                >
-                  <option value="">No template</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Slide Count Selector */}
-              <div>
-                <label htmlFor="slideCount" className="block text-sm font-medium text-ocean-200 mb-2">
-                  Slide Count
-                </label>
-                <select
-                  id="slideCount"
-                  value={form.slideCount}
-                  onChange={(e) => setForm({ ...form, slideCount: Number(e.target.value) })}
-                  className="input"
-                >
-                  <option value={5}>5 slides</option>
-                  <option value={10}>10 slides</option>
-                  <option value={15}>15 slides</option>
-                  <option value={20}>20 slides</option>
-                </select>
-              </div>
-
-              {/* Tone Selector */}
-              <div>
-                <label htmlFor="tone" className="block text-sm font-medium text-ocean-200 mb-2">
-                  Tone
-                </label>
-                <select
-                  id="tone"
-                  value={form.tone}
-                  onChange={(e) => setForm({ ...form, tone: e.target.value as Tone })}
-                  className="input"
-                >
-                  <option value="professional">Professional</option>
-                  <option value="casual">Casual</option>
-                  <option value="formal">Formal</option>
-                  <option value="creative">Creative</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-200">
-                {error}
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button type="submit" className="btn-primary w-full text-lg py-4">
-              <Ship className="w-5 h-5" />
-              Set Sail & Generate
-            </button>
-          </form>
-        )}
-
-        {/* Loading State */}
-        {isLoading && (
-          <div className="card text-center py-12">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gold-500/20 mb-6">
-              <Loader2 className="w-10 h-10 text-gold-500 animate-spin" />
-            </div>
-
-            <h2 className="font-display text-2xl font-semibold text-white mb-2">
-              {loadingMessage}
-            </h2>
-            <p className="text-ocean-400 mb-6">
-              {currentStep || 'Preparing your voyage...'}
-            </p>
-
-            {/* Progress Bar */}
-            <div className="max-w-md mx-auto">
-              <div className="h-3 bg-ocean-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-gold-600 to-gold-400 transition-all duration-500 ease-out"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <div className="mt-2 text-ocean-400 text-sm">
-                {progress}% complete
-              </div>
-            </div>
-
-            {/* Animated Ship */}
-            <div className="mt-8 relative h-12 overflow-hidden">
-              <div
-                className="absolute transition-all duration-1000 ease-in-out"
-                style={{ left: `${Math.min(progress, 90)}%`, transform: 'translateX(-50%)' }}
-              >
-                <Ship className="w-10 h-10 text-wood-400" />
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-ocean-700 rounded" />
+            <div className="mt-2 text-ocean-400 text-sm">
+              {progress > 0 ? `${progress}% complete` : 'Starting...'}
             </div>
           </div>
-        )}
 
-        {/* Result State */}
-        {result && (
-          <div className="card text-center py-12">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/20 mb-6">
-              <Anchor className="w-10 h-10 text-green-400" />
-            </div>
-
-            <h2 className="font-display text-3xl font-bold text-white mb-2">
-              Land Ho! Your Deck is Ready!
-            </h2>
-            <p className="text-ocean-300 text-lg mb-8">
-              {result.title}
-            </p>
-
-            {/* Export Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
-              <button onClick={handleOpenGoogleSlides} className="btn-primary flex-1">
-                <ExternalLink className="w-5 h-5" />
-                Open in Google Slides
-              </button>
-              <button onClick={handleDownloadPptx} className="btn-secondary flex-1">
-                <Download className="w-5 h-5" />
-                Download PPTX
-              </button>
-            </div>
-
-            {/* Generate Another */}
-            <button
-              onClick={() => {
-                setResult(null);
-                setForm({ ...form, prompt: '' });
-              }}
-              className="mt-8 text-ocean-300 hover:text-white transition-colors underline"
+          {/* Animated Ship */}
+          <div className="mt-8 relative h-12 overflow-hidden">
+            <div
+              className="absolute transition-all duration-1000 ease-in-out"
+              style={{ left: `${Math.min(progress, 90)}%`, transform: 'translateX(-50%)' }}
             >
-              Chart another course
-            </button>
-
-            {/* Error during export */}
-            {error && (
-              <div className="mt-6 p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-200">
-                {error}
-              </div>
-            )}
+              <Ship className="w-10 h-10 text-wood-400" />
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-ocean-700 rounded" />
           </div>
-        )}
+
+          <p className="mt-6 text-ocean-500 text-sm">
+            Generation may take 30–60 seconds. Please don't close this tab.
+          </p>
+        </div>
+      )}
+
+      {/* Result State */}
+      {result && (
+        <div className="card text-center py-12">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/20 mb-6">
+            <Anchor className="w-10 h-10 text-green-400" />
+          </div>
+
+          <h2 className="font-display text-3xl font-bold text-white mb-2">
+            Land Ho! Your Deck is Ready!
+          </h2>
+          <p className="text-ocean-300 text-lg mb-2">
+            {result.title}
+          </p>
+          <p className="text-ocean-500 text-sm mb-8">
+            {result.slides_generated} slides &middot; {result.generation_time_seconds.toFixed(1)}s
+          </p>
+
+          {/* Export Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-md mx-auto">
+            <button
+              onClick={handleOpenGoogleSlides}
+              className="btn-primary flex-1"
+              disabled={!result.google_slides_url}
+              title={!result.google_slides_url ? 'Google Slides export not available' : undefined}
+            >
+              <ExternalLink className="w-5 h-5" />
+              Open in Google Slides
+            </button>
+            <button onClick={handleDownloadPptx} className="btn-secondary flex-1">
+              <Download className="w-5 h-5" />
+              Download PPTX
+            </button>
+          </div>
+
+          {/* Generate Another */}
+          <button
+            onClick={() => {
+              setResult(null);
+              setError(null);
+              setForm((prev) => ({ ...prev, prompt: '' }));
+            }}
+            className="mt-8 text-ocean-300 hover:text-white transition-colors underline"
+          >
+            Chart another course
+          </button>
+
+          {/* Error during export */}
+          {error && (
+            <div className="mt-6 p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-200 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

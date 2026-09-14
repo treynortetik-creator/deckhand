@@ -356,8 +356,8 @@ function TemplateModal({
         slide_structure: slides,
       });
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save template. Try again!');
+    } catch {
+      setError('Failed to save template. Try again!');
     } finally {
       setIsSubmitting(false);
     }
@@ -471,9 +471,8 @@ export default function Templates() {
       setError(null);
       const data = await templateApi.list();
       setTemplates(data);
-    } catch (err) {
+    } catch {
       setError('Failed to fetch templates. The seas be rough!');
-      console.error('Failed to fetch templates:', err);
     } finally {
       setIsLoading(false);
     }
@@ -498,9 +497,8 @@ export default function Templates() {
     try {
       await templateApi.delete(id);
       await fetchTemplates();
-    } catch (err) {
+    } catch {
       setError('Failed to delete template. It be clinging to the mast!');
-      console.error('Failed to delete template:', err);
     }
   };
 
@@ -510,9 +508,8 @@ export default function Templates() {
       setIsSeeding(true);
       await templateApi.seed();
       await fetchTemplates();
-    } catch (err) {
+    } catch {
       setError('Failed to seed templates. Try again, matey!');
-      console.error('Failed to seed templates:', err);
     } finally {
       setIsSeeding(false);
     }

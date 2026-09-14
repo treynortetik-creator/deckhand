@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Image,
   Upload,
@@ -38,6 +38,22 @@ function formatDate(dateString: string): string {
 // Check if file type is an image
 function isImageType(fileType: string): boolean {
   return fileType.startsWith('image/');
+}
+
+// Validate file before upload
+function validateFile(file: File, maxSizeMb = 50): string | null {
+  const allowedTypes = [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ];
+  if (!allowedTypes.includes(file.type)) {
+    return 'File type not supported. Please upload images (JPEG, PNG, GIF, WebP, SVG), PDFs, or Word documents.';
+  }
+  if (file.size > maxSizeMb * 1024 * 1024) {
+    return `File is too large. Maximum size is ${maxSizeMb}MB.`;
+  }
+  return null;
 }
 
 // Tag colors for variety
@@ -93,9 +109,8 @@ export default function Assets() {
       const data: AssetListResponse = response.data;
       setAssets(data.assets);
       setTotal(data.total);
-    } catch (err) {
+    } catch {
       setError('Failed to fetch yer treasures, matey. Try again!');
-      console.error('Error fetching assets:', err);
     } finally {
       setIsLoading(false);
     }
@@ -105,9 +120,10 @@ export default function Assets() {
     fetchAssets();
   }, [fetchAssets]);
 
-  // Filter assets by search query (client-side)
-  const filteredAssets = assets.filter((asset) =>
-    asset.filename.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter assets by search query (client-side) - memoized for performance
+  const filteredAssets = useMemo(
+    () => assets.filter((asset) => asset.filename.toLowerCase().includes(searchQuery.toLowerCase())),
+    [assets, searchQuery]
   );
 
   // Drag and drop handlers
@@ -143,14 +159,20 @@ export default function Assets() {
 
   // Upload file
   const uploadFile = async (file: File) => {
+    const validationError = validateFile(file);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(0);
     setError(null);
 
-    // Simulate progress for UX (actual progress would need axios config)
+    // Simulate upload progress for UX
     const progressInterval = setInterval(() => {
       setUploadProgress((prev) => Math.min(prev + 10, 90));
-    }, 100);
+    }, 150);
 
     try {
       await assetApi.upload(file, uploadTags);
@@ -158,9 +180,12 @@ export default function Assets() {
       setUploadTags([]);
       setTagInput('');
       await fetchAssets();
-    } catch (err) {
-      setError('Arrr! Failed to stow yer treasure. Check the file type and try again!');
-      console.error('Error uploading file:', err);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : 'Arrr! Failed to stow yer treasure. Check the file type and try again!';
+      setError(message);
     } finally {
       clearInterval(progressInterval);
       setIsUploading(false);
@@ -189,18 +214,26 @@ export default function Assets() {
     }
   };
 
-  // Download asset
-  const downloadAsset = (asset: Asset) => {
-    const url = assetApi.downloadUrl(asset.id);
-    const token = localStorage.getItem('token');
-    // Create a temporary link with auth
-    const link = document.createElement('a');
-    link.href = `${url}?token=${token}`;
-    link.download = asset.filename;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Download asset using Authorization header (keeps token out of URL)
+  const downloadAsset = async (asset: Asset) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(assetApi.downloadUrl(asset.id), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = asset.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Failed to download the file. Please try again.');
+    }
   };
 
   // Delete asset
@@ -210,9 +243,8 @@ export default function Assets() {
       await assetApi.delete(deleteConfirm.id);
       setDeleteConfirm(null);
       await fetchAssets();
-    } catch (err) {
+    } catch {
       setError('Failed to throw that treasure overboard!');
-      console.error('Error deleting asset:', err);
     }
   };
 
@@ -248,9 +280,8 @@ export default function Assets() {
       await assetApi.updateTags(editingTags.id, editTagsList);
       setEditingTags(null);
       await fetchAssets();
-    } catch (err) {
+    } catch {
       setError('Failed to update the treasure tags!');
-      console.error('Error updating tags:', err);
     }
   };
 
@@ -269,7 +300,7 @@ export default function Assets() {
 
       {/* Upload Zone */}
       <div
-        className={`card mb-8 border-2 border-dashed transition-all cursor-pointer ${
+        className={`card mb-6 border-2 border-dashed transition-all cursor-pointer ${
           isDragging
             ? 'border-gold-500 bg-gold-500/10'
             : 'border-ocean-600 hover:border-ocean-400'
@@ -277,20 +308,24 @@ export default function Assets() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !isUploading && fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload file"
+        onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
       >
         <input
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept="image/*,.pdf,.docx"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml,.pdf,.docx"
           onChange={handleFileSelect}
         />
 
         {isUploading ? (
           <div className="py-8 text-center">
             <Loader2 className="w-12 h-12 text-gold-500 mx-auto mb-4 animate-spin" />
-            <p className="text-ocean-200 mb-4">Stowing yer treasure...</p>
+            <p className="text-ocean-200 mb-4">Stowing yer treasure... {uploadProgress}%</p>
             <div className="max-w-xs mx-auto">
               <div className="h-2 bg-ocean-800 rounded-full overflow-hidden">
                 <div
@@ -307,14 +342,14 @@ export default function Assets() {
               Drag and drop yer treasure here, or click to browse
             </p>
             <p className="text-ocean-500 text-sm">
-              Accepts images (PNG, JPEG, SVG, WebP) and documents (PDF, DOCX)
+              Accepts images (JPEG, PNG, GIF, WebP, SVG) and documents (PDF, DOCX) up to 50MB
             </p>
           </div>
         )}
       </div>
 
       {/* Tags Input for Upload */}
-      <div className="card mb-8" onClick={(e) => e.stopPropagation()}>
+      <div className="card mb-6" onClick={(e) => e.stopPropagation()}>
         <label className="block text-sm font-medium text-ocean-200 mb-2">
           <Tag className="w-4 h-4 inline mr-2" />
           Tags for next upload (optional)
@@ -329,6 +364,7 @@ export default function Assets() {
               <button
                 onClick={() => removeUploadTag(tag)}
                 className="hover:text-white transition-colors"
+                aria-label={`Remove tag ${tag}`}
               >
                 <X className="w-3 h-3" />
               </button>
@@ -343,6 +379,7 @@ export default function Assets() {
             onKeyDown={handleTagKeyDown}
             placeholder="Add a tag..."
             className="input flex-1"
+            maxLength={50}
           />
           <button
             onClick={addUploadTag}
@@ -390,8 +427,8 @@ export default function Assets() {
       {error && (
         <div className="mb-6 p-4 rounded-lg bg-red-900/30 border border-red-700 text-red-200 flex items-center gap-3">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          {error}
-          <button onClick={() => setError(null)} className="ml-auto">
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} aria-label="Dismiss error">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -435,12 +472,17 @@ export default function Assets() {
                   {isImageType(asset.file_type) ? (
                     <img
                       src={assetApi.downloadUrl(asset.id)}
-                      alt={asset.filename}
+                      alt={`Preview of ${asset.filename}`}
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
                   ) : (
-                    <FileText className="w-12 h-12 text-ocean-500" />
+                    <div className="text-center">
+                      <FileText className="w-12 h-12 text-ocean-500 mx-auto" />
+                      <p className="text-ocean-500 text-xs mt-1 uppercase">
+                        {asset.file_type.split('/').pop()}
+                      </p>
+                    </div>
                   )}
 
                   {/* Hover overlay */}
@@ -452,6 +494,7 @@ export default function Assets() {
                       }}
                       className="p-2 rounded-lg bg-ocean-700 hover:bg-ocean-600 transition-colors"
                       title="Download"
+                      aria-label={`Download ${asset.filename}`}
                     >
                       <Download className="w-5 h-5 text-ocean-200" />
                     </button>
@@ -462,6 +505,7 @@ export default function Assets() {
                       }}
                       className="p-2 rounded-lg bg-ocean-700 hover:bg-ocean-600 transition-colors"
                       title="Edit Tags"
+                      aria-label={`Edit tags for ${asset.filename}`}
                     >
                       <Tag className="w-5 h-5 text-ocean-200" />
                     </button>
@@ -472,6 +516,7 @@ export default function Assets() {
                       }}
                       className="p-2 rounded-lg bg-red-900/50 hover:bg-red-800/50 transition-colors"
                       title="Delete"
+                      aria-label={`Delete ${asset.filename}`}
                     >
                       <Trash2 className="w-5 h-5 text-red-400" />
                     </button>
@@ -516,24 +561,30 @@ export default function Assets() {
         <div
           className="fixed inset-0 z-50 bg-ocean-950/90 flex items-center justify-center p-4"
           onClick={() => setPreviewAsset(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Preview of ${previewAsset.filename}`}
         >
-          <div className="max-w-4xl max-h-[90vh] relative">
+          <div
+            className="relative max-w-4xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setPreviewAsset(null)}
               className="absolute -top-12 right-0 p-2 text-ocean-300 hover:text-white transition-colors"
+              aria-label="Close preview"
             >
               <X className="w-8 h-8" />
             </button>
             <img
               src={assetApi.downloadUrl(previewAsset.id)}
               alt={previewAsset.filename}
-              className="max-w-full max-h-[80vh] object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg mx-auto block"
             />
             <div className="mt-4 text-center">
               <p className="text-white font-medium">{previewAsset.filename}</p>
               <p className="text-ocean-400 text-sm">
-                {formatFileSize(previewAsset.file_size)} - {formatDate(previewAsset.uploaded_at)}
+                {formatFileSize(previewAsset.file_size)} &middot; {formatDate(previewAsset.uploaded_at)}
               </p>
             </div>
           </div>
@@ -545,6 +596,8 @@ export default function Assets() {
         <div
           className="fixed inset-0 z-50 bg-ocean-950/90 flex items-center justify-center p-4"
           onClick={() => setDeleteConfirm(null)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
             className="card max-w-md w-full"
@@ -554,7 +607,7 @@ export default function Assets() {
               Walk the Plank?
             </h3>
             <p className="text-ocean-300 mb-6">
-              Are ye sure ye want to throw <strong>{deleteConfirm.filename}</strong> overboard?
+              Are ye sure ye want to throw <strong className="text-white">{deleteConfirm.filename}</strong> overboard?
               This treasure will be lost forever!
             </p>
             <div className="flex gap-3 justify-end">
@@ -566,7 +619,7 @@ export default function Assets() {
               </button>
               <button
                 onClick={confirmDelete}
-                className="btn-primary bg-red-600 hover:bg-red-500"
+                className="btn-primary bg-red-600 hover:bg-red-500 border-red-600"
               >
                 <Trash2 className="w-4 h-4" />
                 Delete
@@ -581,6 +634,8 @@ export default function Assets() {
         <div
           className="fixed inset-0 z-50 bg-ocean-950/90 flex items-center justify-center p-4"
           onClick={() => setEditingTags(null)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
             className="card max-w-md w-full"
@@ -589,7 +644,9 @@ export default function Assets() {
             <h3 className="font-display text-xl font-semibold text-white mb-4">
               Edit Treasure Tags
             </h3>
-            <p className="text-ocean-400 text-sm mb-4">{editingTags.filename}</p>
+            <p className="text-ocean-400 text-sm mb-4 truncate" title={editingTags.filename}>
+              {editingTags.filename}
+            </p>
 
             {/* Current Tags */}
             <div className="flex flex-wrap gap-2 mb-4 min-h-[40px]">
@@ -605,6 +662,7 @@ export default function Assets() {
                     <button
                       onClick={() => removeEditTag(tag)}
                       className="hover:text-white transition-colors"
+                      aria-label={`Remove tag ${tag}`}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -622,6 +680,7 @@ export default function Assets() {
                 onKeyDown={handleEditTagKeyDown}
                 placeholder="Add a tag..."
                 className="input flex-1"
+                maxLength={50}
               />
               <button
                 onClick={addEditTag}
